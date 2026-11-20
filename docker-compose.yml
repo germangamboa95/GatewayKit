@@ -1,0 +1,42 @@
+services:
+  gateway:
+    build: .
+    environment:
+      GATEWAY_CONFIG: /config/${CONFIG:-gateway.yaml}
+    volumes:
+      - ./configs:/config:ro
+    ports: # mocks and tests share this namespace, so every port is published here
+      - "8080:8080"
+      - "9090:9090"
+      - "3001-3006:3001-3006"
+
+  users: &mock
+    build: ./mock-upstream
+    network_mode: "service:gateway"
+    environment: { SERVICE_NAME: users, PORT: "3001" }
+  orders:
+    <<: *mock
+    environment: { SERVICE_NAME: orders, PORT: "3002" }
+  products-a:
+    <<: *mock
+    environment: { SERVICE_NAME: products-a, PORT: "3003" }
+  products-b:
+    <<: *mock
+    environment: { SERVICE_NAME: products-b, PORT: "3004" }
+  legacy:
+    <<: *mock
+    environment:
+      SERVICE_NAME: legacy
+      PORT: "3005"
+      EXTRA_RESPONSE_HEADERS: "Server=mock;X-Powered-By=mock"
+  internal:
+    <<: *mock
+    environment: { SERVICE_NAME: internal, PORT: "3006" }
+
+  tests:
+    build: ./tests
+    network_mode: "service:gateway"
+    profiles: ["test"]
+    environment:
+      CONFIG: ${CONFIG:-gateway.yaml}
+      GATEWAY_URL: http://localhost:${GATEWAY_PORT:-8080}
