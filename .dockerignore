@@ -1,0 +1,8 @@
+.git
+.claude
+openspec
+mock-upstream
+tests
+scripts
+reference
+*.md
