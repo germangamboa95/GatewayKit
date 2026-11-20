@@ -112,7 +112,7 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 	}
 	v.positive(r.Timeout)
 	if rt := r.Retry; rt != nil {
-		if rt.Attempts == nil {
+		if rt.Attempts == nil && !hasKey(rt.N, "attempts") {
 			v.required(rt.N, rt.Path+".attempts")
 		}
 		v.minInt(rt.Attempts, 1)
@@ -128,7 +128,9 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 	}
 	if hc := r.HealthCheck; hc != nil {
 		if hc.HCPath == nil {
-			v.required(hc.N, hc.Path+".path")
+			if !hasKey(hc.N, "path") {
+				v.required(hc.N, hc.Path+".path")
+			}
 		} else if !strings.HasPrefix(hc.HCPath.V, "/") {
 			v.d.Errorf(hc.HCPath.N, hc.HCPath.Path, "must start with \"/\" (got %q)", hc.HCPath.V)
 		}
@@ -136,7 +138,7 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 		v.minInt(hc.UnhealthyThreshold, 1)
 	}
 	if cb := r.CircuitBreaker; cb != nil {
-		if cb.Threshold == nil {
+		if cb.Threshold == nil && !hasKey(cb.N, "threshold") {
 			v.required(cb.N, cb.Path+".threshold")
 		}
 		v.minInt(cb.Threshold, 1)
@@ -149,7 +151,9 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 	v.mergedRateLimit(r)
 	if a := r.Auth; a != nil {
 		if a.Type == nil {
-			v.required(a.N, a.Path+".type")
+			if !hasKey(a.N, "type") {
+				v.required(a.N, a.Path+".type")
+			}
 		} else {
 			v.enum(a.Type, contract.AuthTypeAPIKey)
 		}
@@ -225,7 +229,9 @@ func (v *validator) upstream(u *RawUpstream) {
 	seen := map[string]string{}
 	for _, t := range u.Targets {
 		if t.URL == nil {
-			v.required(t.N, t.Path+".url")
+			if !hasKey(t.N, "url") {
+				v.required(t.N, t.Path+".url")
+			}
 		} else {
 			v.url(t.URL)
 			if prev, ok := seen[t.URL.V]; ok {
