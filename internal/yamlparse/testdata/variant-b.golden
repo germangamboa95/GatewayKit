@@ -1,0 +1,44 @@
+map(1) @1:1
+  "gateway": map(3) @2:3
+    "port": "9090" plain @2:9
+    "global_timeout": "750ms" quoted @3:19
+    "routes": seq(2) @5:5
+      - [0] map(6) @5:7
+        "path": "/v2/" quoted @5:13
+        "methods": seq(2) @6:16
+          - [0] "get" quoted @6:17
+          - [1] "delete" quoted @6:24
+        "strip_prefix": "true" plain @7:21
+        "timeout": "2s" quoted @8:16
+        "upstream": map(1) @10:9
+          "url": "http://localhost:3002/base" quoted @10:14
+        "rate_limit": map(3) @11:19
+          "requests": "2" plain @11:31
+          "window": "1s" quoted @11:42
+          "per": "global" plain @11:53
+      - [1] map(4) @12:7
+        "path": "/v2/admin" quoted @12:13
+        "upstream": map(2) @14:9
+          "targets": seq(2) @15:11
+            - [0] map(1) @15:13
+              "url": "http://localhost:3003" quoted @15:20
+            - [1] map(1) @16:13
+              "url": "http://localhost:3004" quoted @16:20
+          "retry": map(4) @17:16
+            "attempts": "2" plain @17:28
+            "backoff": "fixed" plain @17:40
+            "initial_delay": "100ms" quoted @17:62
+            "on": seq(1) @17:75
+              - [0] "500" plain @17:76
+        "auth": map(3) @18:13
+          "type": "api_key" plain @18:21
+          "header": "Authorization" quoted @18:38
+          "keys": seq(1) @18:61
+            - [0] "k1" quoted @18:62
+        "response_transform": map(1) @20:9
+          "body": map(1) @21:11
+            "envelope": map(2) @22:13
+              "result": map(2) @22:21
+                "payload": "$body" quoted @22:32
+                "ok": "true" plain @22:45
+              "route": "$route_path" quoted @23:20
