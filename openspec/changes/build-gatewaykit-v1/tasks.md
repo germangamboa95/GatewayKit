@@ -61,8 +61,8 @@ When each piece of work starts:
 - [x] 4.3 A2: decode node trees per design D4 (typing rules, unknown-key warnings with location, lenient placement and both-places errors, route `rate_limit: false` per design D5); verify tests on hand-built node trees
 - [x] 4.4 A3: validate every field and cross-field rule in the config-loading spec, collecting all errors as `file:line:col: field.path: message`; verify one test per rule plus the config-loading spec's multi-error scenario
 - [x] 4.5 A3: emit the four config spec §11 warnings; verify a test captures each one
-- [ ] 4.6 A4: normalize per config spec §10 (precedence chain, rate-limit merge, targets from `url`, `MethodList`, lowercase header names, compiled variables, mappings and envelopes with scope and conflict errors); verify the sample's hand-built tree normalizes to `internal/fixtures`, and config A gets every default
-- [ ] 4.7 Wire `Load(path)` end to end once group 3 merges; verify the sample loads with zero errors and zero warnings, all four `configs/` files load, and `balance: random` fails with its location
+- [x] 4.6 A4: normalize per config spec §10 (precedence chain, rate-limit merge, targets from `url`, `MethodList`, lowercase header names, compiled variables, mappings and envelopes with scope and conflict errors); verify the sample's hand-built tree normalizes to `internal/fixtures`, and config A gets every default
+- [x] 4.7 Wire `Load(path)` end to end once group 3 merges; verify the sample loads with zero errors and zero warnings, all four `configs/` files load, and `balance: random` fails with its location
 
 ## 5. HTTP core (B1 to B3, agent `http`)
 
