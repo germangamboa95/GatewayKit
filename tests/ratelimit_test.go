@@ -363,3 +363,23 @@ func TestRateLimitVariantCUnlimited(t *testing.T) {
 		t.Errorf("mock 3001 got %d requests, want %d", got, n)
 	}
 }
+
+// Routes with no limit after the merge are never limited and carry no X-RateLimit-* headers.
+func TestRateLimitNoLimitConfigured(t *testing.T) {
+	RequireConfig(t, "variant-a.yaml", "variant-b.yaml")
+	path, port, hdr := "/anything", 3001, []string(nil)
+	if Config() == "variant-b.yaml" {
+		path, port, hdr = "/v2/admin/x", 3003, []string{"Authorization", "k1"}
+		ResetMocks(t, 3004)
+	}
+	ResetMocks(t, port)
+	c := NewClient(t)
+
+	for i := range 12 {
+		r := c.Get(path, hdr...)
+		if r.Status != http.StatusOK {
+			t.Fatalf("request %d: status %d, want 200; body %s", i+1, r.Status, r.Body)
+		}
+		requireNoRateLimitHeaders(t, r)
+	}
+}
