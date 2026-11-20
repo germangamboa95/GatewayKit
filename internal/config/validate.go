@@ -239,7 +239,7 @@ func (v *validator) upstream(u *RawUpstream) {
 	v.enum(u.Balance, contract.BalanceRoundRobin, contract.BalanceWeightedRoundRobin)
 	single := u.URL != nil && u.TargetsNode == nil || u.URL == nil && len(u.Targets) == 1
 	if single {
-		if u.Balance != nil {
+		if u.Balance != nil && (u.Balance.V == contract.BalanceRoundRobin || u.Balance.V == contract.BalanceWeightedRoundRobin) {
 			v.d.Warnf(u.Balance.N, u.Balance.Path, "has no effect with only one target")
 		}
 		for _, t := range u.Targets {
