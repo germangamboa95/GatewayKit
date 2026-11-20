@@ -19,7 +19,7 @@ func NewPool(route *contract.Route) *Pool {
 		p.checked = true
 		p.threshold = hc.UnhealthyThreshold
 		if p.threshold < 1 {
-			p.threshold = 1
+			p.threshold = 3
 		}
 	}
 	return p
