@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 func sampleTree() *yamlparse.Node {
@@ -49,11 +48,11 @@ func sampleTree() *yamlparse.Node {
 }
 
 func TestNormalizeSample(t *testing.T) {
-	cfg, warns, err := LoadNode("gateway.yaml", sampleTree())
+	cfg, warns, err := loadNode("gateway.yaml", sampleTree())
 	if err != nil || len(warns) != 0 {
 		t.Fatalf("err %v warns %v", err, warns)
 	}
-	want := Sample()
+	want := sample()
 	if cfg.Port != want.Port || len(cfg.Routes) != len(want.Routes) {
 		t.Fatalf("port %d routes %d", cfg.Port, len(cfg.Routes))
 	}
@@ -64,9 +63,9 @@ func TestNormalizeSample(t *testing.T) {
 	}
 }
 
-func load(t *testing.T, root *yamlparse.Node) *contract.GatewayConfig {
+func load(t *testing.T, root *yamlparse.Node) *Gateway {
 	t.Helper()
-	cfg, _, err := LoadNode("gateway.yaml", root)
+	cfg, _, err := loadNode("gateway.yaml", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,8 +76,8 @@ func TestNormalizeConfigADefaults(t *testing.T) {
 	cfg := load(t, doc(m(), route("/", up("url", q("http://localhost:3001")))))
 	r := cfg.Routes[0]
 	if cfg.Port != 8080 || r.Path != "/" || r.Timeout != 30*time.Second || r.RateLimit != nil ||
-		r.Balance != contract.BalanceRoundRobin || r.StripPrefix ||
-		!reflect.DeepEqual(r.MethodList, contract.DefaultMethods) || len(r.Methods) != 7 ||
+		r.Balance != BalanceRoundRobin || r.StripPrefix ||
+		!reflect.DeepEqual(r.MethodList, DefaultMethods) || len(r.Methods) != 7 ||
 		len(r.Targets) != 1 || r.Targets[0].URL.String() != "http://localhost:3001" || r.Targets[0].Weight != 1 ||
 		r.Retry != nil || r.HealthCheck != nil || r.Auth != nil || r.CircuitBreaker != nil ||
 		r.ReqTransform != nil || r.RespTransform != nil {
@@ -99,14 +98,14 @@ func TestNormalizeFeatureDefaults(t *testing.T) {
 		"circuit_breaker", m("threshold", "5"),
 		"auth", m("type", "API_KEY", "keys", seq(q("k1"))))))
 	r := cfg.Routes[0]
-	want := &contract.Retry{Attempts: 2, Backoff: "fixed", InitialDelay: time.Second, On: map[int]bool{502: true, 503: true, 504: true}}
+	want := &Retry{Attempts: 2, Backoff: "fixed", InitialDelay: time.Second, On: map[int]bool{502: true, 503: true, 504: true}}
 	if !reflect.DeepEqual(r.Retry, want) {
 		t.Errorf("retry %+v", r.Retry)
 	}
-	if *r.HealthCheck != (contract.HealthCheck{Path: "/healthz", Interval: 30 * time.Second, UnhealthyThreshold: 3}) {
+	if *r.HealthCheck != (HealthCheck{Path: "/healthz", Interval: 30 * time.Second, UnhealthyThreshold: 3}) {
 		t.Errorf("hc %+v", r.HealthCheck)
 	}
-	if *r.CircuitBreaker != (contract.CircuitBreakerConfig{Threshold: 5, Window: 60 * time.Second, Cooldown: 30 * time.Second}) {
+	if *r.CircuitBreaker != (CircuitBreaker{Threshold: 5, Window: 60 * time.Second, Cooldown: 30 * time.Second}) {
 		t.Errorf("cb %+v", r.CircuitBreaker)
 	}
 	if r.Auth.Header != "x-api-key" || r.Auth.Type != "api_key" {
@@ -123,7 +122,7 @@ func TestNormalizeRateLimitMerge(t *testing.T) {
 		route("/a", u(), "rate_limit", m("requests", "30")),
 		route("/b", u()),
 		route("/c", u(), "rate_limit", "false")))
-	want := contract.RateLimit{Requests: 30, Window: time.Minute, Strategy: "fixed_window", Per: "global"}
+	want := RateLimit{Requests: 30, Window: time.Minute, Strategy: "fixed_window", Per: "global"}
 	if *cfg.Routes[0].RateLimit != want {
 		t.Errorf("partial %+v", cfg.Routes[0].RateLimit)
 	}
@@ -166,7 +165,7 @@ func TestNormalizeTransforms(t *testing.T) {
 		"request_transform", m("headers", m("add", m("X-V", q("v=$request_time")), "remove", seq(q("X-Debug")))),
 		"response_transform", m("body", m("envelope", m("n", "3", "ok", "true", "z", nil, "s", "plain", "list", seq(q("$body"), "1")))))))
 	r := cfg.Routes[0]
-	if got := r.ReqTransform.AddHeaders[0]; got.Name != "x-v" || got.Value != contract.Literal("v=$request_time") {
+	if got := r.ReqTransform.AddHeaders[0]; got.Name != "x-v" || got.Value != Literal("v=$request_time") {
 		t.Errorf("add %+v", got)
 	}
 	if !reflect.DeepEqual(r.ReqTransform.RemoveHeaders, []string{"x-debug"}) {
@@ -174,7 +173,7 @@ func TestNormalizeTransforms(t *testing.T) {
 	}
 	f := r.RespTransform.Envelope.Fields
 	if f[0].Value.Raw != "3" || f[1].Value.Raw != "true" || f[2].Value.Raw != "null" ||
-		f[3].Value.Var != contract.Literal("plain") || f[4].Value.Items[0].Var.Kind != contract.VarBody ||
+		f[3].Value.Var != Literal("plain") || f[4].Value.Items[0].Var.Kind != VarBody ||
 		f[4].Value.Items[1].Raw != "1" {
 		t.Errorf("envelope %+v", f)
 	}

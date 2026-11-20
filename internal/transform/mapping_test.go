@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
-func entry(t *testing.T, dest, src string) contract.MappingEntry {
+func entry(t *testing.T, dest, src string) config.MappingEntry {
 	t.Helper()
-	e := contract.MappingEntry{Dest: strings.Split(dest, ".")}
+	e := config.MappingEntry{Dest: strings.Split(dest, ".")}
 	if strings.HasPrefix(src, "$") {
 		v := mustVar(t, src)
 		e.Var = &v
@@ -20,8 +20,8 @@ func entry(t *testing.T, dest, src string) contract.MappingEntry {
 	return e
 }
 
-func sampleMapping(t *testing.T) *contract.Mapping {
-	return &contract.Mapping{Entries: []contract.MappingEntry{
+func sampleMapping(t *testing.T) *config.Mapping {
+	return &config.Mapping{Entries: []config.MappingEntry{
 		entry(t, "user.id", "userId"),
 		entry(t, "user.name", "userName"),
 		entry(t, "meta.source", "$literal:gateway"),
@@ -29,7 +29,7 @@ func sampleMapping(t *testing.T) *contract.Mapping {
 	}}
 }
 
-func mapString(t *testing.T, m *contract.Mapping, body string) (string, bool) {
+func mapString(t *testing.T, m *config.Mapping, body string) (string, bool) {
 	t.Helper()
 	out, mapped, err := MapBody([]byte(body), m, Env{RequestTime: reqTime, RoutePath: "/api/legacy"})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestMapBodyNullSource(t *testing.T) {
 }
 
 func TestMapBodyAllMissingOmitsParent(t *testing.T) {
-	m := &contract.Mapping{Entries: []contract.MappingEntry{entry(t, "user.id", "userId")}}
+	m := &config.Mapping{Entries: []config.MappingEntry{entry(t, "user.id", "userId")}}
 	got, mapped := mapString(t, m, `{}`)
 	if !mapped || got != `{}` {
 		t.Fatalf("got %s mapped=%v", got, mapped)
@@ -71,7 +71,7 @@ func TestMapBodyAllMissingOmitsParent(t *testing.T) {
 }
 
 func TestMapBodyArrayIndex(t *testing.T) {
-	m := &contract.Mapping{Entries: []contract.MappingEntry{entry(t, "first.sku", "items.0.sku")}}
+	m := &config.Mapping{Entries: []config.MappingEntry{entry(t, "first.sku", "items.0.sku")}}
 	got, _ := mapString(t, m, `{"items": [{"sku": "A1"}]}`)
 	if got != `{"first":{"sku":"A1"}}` {
 		t.Fatalf("got %s", got)
@@ -83,7 +83,7 @@ func TestMapBodyArrayIndex(t *testing.T) {
 }
 
 func TestMapBodyFidelity(t *testing.T) {
-	m := &contract.Mapping{Entries: []contract.MappingEntry{
+	m := &config.Mapping{Entries: []config.MappingEntry{
 		entry(t, "big", "n"),
 		entry(t, "obj", "o"),
 		entry(t, "html", "h"),
@@ -96,7 +96,7 @@ func TestMapBodyFidelity(t *testing.T) {
 }
 
 func TestMapBodyNumericKeyOnObject(t *testing.T) {
-	m := &contract.Mapping{Entries: []contract.MappingEntry{entry(t, "x", "o.0")}}
+	m := &config.Mapping{Entries: []config.MappingEntry{entry(t, "x", "o.0")}}
 	got, _ := mapString(t, m, `{"o": {"0": "zero"}}`)
 	if got != `{"x":"zero"}` {
 		t.Fatalf("got %s", got)

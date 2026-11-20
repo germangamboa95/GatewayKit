@@ -1,3 +1,6 @@
+// Package config loads gateway.yaml. It parses the file, decodes and
+// validates every field with file:line:col diagnostics, and normalizes the
+// result into the Gateway model the rest of the gateway runs on.
 package config
 
 import (
@@ -5,14 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 // Load reads, parses, decodes, validates and normalizes the config at path.
 // It returns the warnings even when it fails. A non-nil error from a config
 // problem is a *LoadError.
-func Load(path string) (*contract.GatewayConfig, []string, error) {
+func Load(path string) (*Gateway, []string, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("config: %w", err)
@@ -26,15 +28,15 @@ func Load(path string) (*contract.GatewayConfig, []string, error) {
 		}
 		return nil, nil, &LoadError{File: name, Problems: []string{name + sep + err.Error()}}
 	}
-	return LoadNode(name, root)
+	return loadNode(name, root)
 }
 
-// LoadNode runs decode, validate and normalize on a parsed tree.
-func LoadNode(file string, root *yamlparse.Node) (*contract.GatewayConfig, []string, error) {
-	d := &Diag{File: file}
-	raw := Decode(root, d)
-	Validate(raw, d)
-	cfg := Normalize(raw, d)
+// loadNode runs decode, validate and normalize on a parsed tree.
+func loadNode(file string, root *yamlparse.Node) (*Gateway, []string, error) {
+	d := &diag{File: file}
+	raw := decode(root, d)
+	validate(raw, d)
+	cfg := normalize(raw, d)
 	if err := d.Err(); err != nil {
 		return nil, d.Warnings, err
 	}

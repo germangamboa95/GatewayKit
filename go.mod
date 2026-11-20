@@ -1,4 +1,4 @@
-module gatewaykit
+module github.com/germangamboa95/gatewaykit
 
 go 1.27.4
 

@@ -3,7 +3,7 @@ package transform
 import (
 	"bytes"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 // BodyValue returns the JSON for $body: the body compacted when it is one
@@ -24,17 +24,17 @@ func BodyValue(body []byte) []byte {
 }
 
 // Envelope renders t in template order with the upstream body as $body.
-func Envelope(t *contract.Template, body []byte, env Env) []byte {
+func Envelope(t *config.Template, body []byte, env Env) []byte {
 	var bodyJSON []byte
 	var b bytes.Buffer
-	var walk func(t *contract.Template)
-	walk = func(t *contract.Template) {
+	var walk func(t *config.Template)
+	walk = func(t *config.Template) {
 		if t == nil {
 			b.WriteString("null")
 			return
 		}
 		switch t.Kind {
-		case contract.TemplateObject:
+		case config.TemplateObject:
 			b.WriteByte('{')
 			for i, f := range t.Fields {
 				if i > 0 {
@@ -45,7 +45,7 @@ func Envelope(t *contract.Template, body []byte, env Env) []byte {
 				walk(f.Value)
 			}
 			b.WriteByte('}')
-		case contract.TemplateArray:
+		case config.TemplateArray:
 			b.WriteByte('[')
 			for i, it := range t.Items {
 				if i > 0 {
@@ -54,8 +54,8 @@ func Envelope(t *contract.Template, body []byte, env Env) []byte {
 				walk(it)
 			}
 			b.WriteByte(']')
-		case contract.TemplateVar:
-			if t.Var.Kind == contract.VarBody {
+		case config.TemplateVar:
+			if t.Var.Kind == config.VarBody {
 				if bodyJSON == nil {
 					bodyJSON = BodyValue(body)
 				}
@@ -63,7 +63,7 @@ func Envelope(t *contract.Template, body []byte, env Env) []byte {
 			} else {
 				writeString(&b, Resolve(t.Var, env))
 			}
-		case contract.TemplateScalar:
+		case config.TemplateScalar:
 			if t.Raw == "" {
 				b.WriteString("null")
 			} else {

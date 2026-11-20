@@ -4,12 +4,10 @@ package retry
 import (
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
-var _ contract.RetryPolicy = (*Policy)(nil)
-
-// Policy implements contract.RetryPolicy. The zero value never retries.
+// Policy decides retries for one route. The zero value never retries.
 type Policy struct {
 	attempts    int
 	exponential bool
@@ -18,13 +16,13 @@ type Policy struct {
 }
 
 // New returns the policy for cfg. A nil cfg makes exactly one attempt.
-func New(cfg *contract.Retry) *Policy {
+func New(cfg *config.Retry) *Policy {
 	if cfg == nil {
 		return &Policy{attempts: 1}
 	}
 	return &Policy{
 		attempts:    cfg.Attempts,
-		exponential: cfg.Backoff == contract.BackoffExponential,
+		exponential: cfg.Backoff == config.BackoffExponential,
 		initial:     cfg.InitialDelay,
 		on:          cfg.On,
 	}

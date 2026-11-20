@@ -5,10 +5,14 @@ package balance
 import (
 	"sync"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
-var _ contract.Balancer = (*Balancer)(nil)
+// TargetPool is the set of targets Pick chooses from. *Pool implements it.
+type TargetPool interface {
+	Targets() []*config.Target
+	Healthy(t *config.Target) bool
+}
 
 // Balancer keeps rotation state per target, so pools with distinct targets
 // rotate independently even when they share one Balancer.
@@ -17,7 +21,7 @@ type Balancer struct {
 
 	mu    sync.Mutex
 	seq   uint64
-	state map[*contract.Target]*targetState
+	state map[*config.Target]*targetState
 }
 
 type targetState struct {
@@ -26,17 +30,17 @@ type targetState struct {
 	healthy bool
 }
 
-// New returns a Balancer for kind (contract.BalanceRoundRobin or
-// contract.BalanceWeightedRoundRobin). Any other value means round robin.
-func New(kind string) *Balancer {
+// New returns a Balancer for kind (config.BalanceRoundRobin or
+// config.BalanceWeightedRoundRobin). Any other value means round robin.
+func New(kind config.Balance) *Balancer {
 	return &Balancer{
-		weighted: kind == contract.BalanceWeightedRoundRobin,
-		state:    map[*contract.Target]*targetState{},
+		weighted: kind == config.BalanceWeightedRoundRobin,
+		state:    map[*config.Target]*targetState{},
 	}
 }
 
 // Pick returns the next healthy target, or false when none is healthy.
-func (b *Balancer) Pick(pool contract.TargetPool) (*contract.Target, bool) {
+func (b *Balancer) Pick(pool TargetPool) (*config.Target, bool) {
 	if pool == nil {
 		return nil, false
 	}
@@ -49,7 +53,7 @@ func (b *Balancer) Pick(pool contract.TargetPool) (*contract.Target, bool) {
 	return b.pickRoundRobin(pool, targets)
 }
 
-func (b *Balancer) get(t *contract.Target) *targetState {
+func (b *Balancer) get(t *config.Target) *targetState {
 	s, ok := b.state[t]
 	if !ok {
 		s = &targetState{healthy: true}
@@ -58,7 +62,7 @@ func (b *Balancer) get(t *contract.Target) *targetState {
 	return s
 }
 
-func (b *Balancer) pickRoundRobin(pool contract.TargetPool, targets []*contract.Target) (*contract.Target, bool) {
+func (b *Balancer) pickRoundRobin(pool TargetPool, targets []*config.Target) (*config.Target, bool) {
 	n := len(targets)
 	start := 0
 	var last uint64
@@ -82,7 +86,7 @@ func (b *Balancer) pickRoundRobin(pool contract.TargetPool, targets []*contract.
 	return nil, false
 }
 
-func (b *Balancer) pickWeighted(pool contract.TargetPool, targets []*contract.Target) (*contract.Target, bool) {
+func (b *Balancer) pickWeighted(pool TargetPool, targets []*config.Target) (*config.Target, bool) {
 	healthy := make([]bool, len(targets))
 	changed := false
 	for i, t := range targets {
@@ -103,7 +107,7 @@ func (b *Balancer) pickWeighted(pool contract.TargetPool, targets []*contract.Ta
 		}
 	}
 	var best *targetState
-	var bestT *contract.Target
+	var bestT *config.Target
 	total := 0
 	for i, t := range targets {
 		if t == nil || !healthy[i] {

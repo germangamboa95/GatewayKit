@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
-func run(root *yamlparse.Node) *Diag {
+func run(root *yamlparse.Node) *diag {
 	d := newDiag()
-	raw := Decode(root, d)
-	Validate(raw, d)
-	Normalize(raw, d)
+	raw := decode(root, d)
+	validate(raw, d)
+	normalize(raw, d)
 	return d
 }
 
@@ -140,7 +140,7 @@ func TestValidateMultiError(t *testing.T) {
 		route("/c", up("targets", seq(m("url", q("http://h:1"), "weight", w), m("url", q("http://h:2"))))),
 		route("/d", up("url", q("http://h:1")), "response_transform", m("headers", m("add", m("X-Time", timeX)))),
 	)
-	_, _, err := LoadNode("gateway.yaml", root)
+	_, _, err := loadNode("gateway.yaml", root)
 	le, ok := err.(*LoadError)
 	if !ok {
 		t.Fatalf("err = %v", err)

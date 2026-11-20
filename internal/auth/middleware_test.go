@@ -5,7 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
 type upstream struct {
@@ -13,27 +14,27 @@ type upstream struct {
 	seen http.Header
 }
 
-func (u *upstream) handler(ctx *contract.RequestContext) *contract.Response {
+func (u *upstream) handler(rc *gateway.RequestContext) *gateway.Response {
 	u.hits++
-	u.seen = ctx.Req.Header.Clone()
-	return &contract.Response{Status: 200, Header: http.Header{}, FromUpstream: true}
+	u.seen = rc.Req.Header.Clone()
+	return &gateway.Response{Status: 200, Header: http.Header{}, FromUpstream: true}
 }
 
-func authRoute(header string, keys ...string) *contract.Route {
-	return &contract.Route{Path: "/api/internal", Auth: &contract.Auth{Type: contract.AuthTypeAPIKey, Header: header, Keys: keys}}
+func authRoute(header string, keys ...string) *config.Route {
+	return &config.Route{Path: "/api/internal", Auth: &config.Auth{Type: config.AuthTypeAPIKey, Header: header, Keys: keys}}
 }
 
-func call(h contract.Handler, hdr map[string]string) *contract.Response {
+func call(h gateway.Handler, hdr map[string]string) *gateway.Response {
 	r := httptest.NewRequest("GET", "/api/internal", nil)
 	for k, v := range hdr {
 		r.Header[k] = []string{v}
 	}
-	return h(&contract.RequestContext{Req: r})
+	return h(&gateway.RequestContext{Req: r})
 }
 
 func TestMissingKey(t *testing.T) {
 	u := &upstream{}
-	h := New(authRoute("x-api-key", "sk_live_abc123"), contract.Deps{})(u.handler)
+	h := Middleware(authRoute("x-api-key", "sk_live_abc123").Auth)(u.handler)
 	resp := call(h, nil)
 	if resp.Status != 401 || u.hits != 0 {
 		t.Fatalf("status %d hits %d", resp.Status, u.hits)
@@ -48,7 +49,7 @@ func TestMissingKey(t *testing.T) {
 
 func TestInvalidKey(t *testing.T) {
 	u := &upstream{}
-	h := New(authRoute("x-api-key", "sk_live_abc123"), contract.Deps{})(u.handler)
+	h := Middleware(authRoute("x-api-key", "sk_live_abc123").Auth)(u.handler)
 	resp := call(h, map[string]string{"X-Api-Key": "sk_live_wrong"})
 	if resp.Status != 401 || u.hits != 0 {
 		t.Fatalf("status %d hits %d", resp.Status, u.hits)
@@ -60,7 +61,7 @@ func TestInvalidKey(t *testing.T) {
 
 func TestValidKeyForwardedUnchanged(t *testing.T) {
 	u := &upstream{}
-	h := New(authRoute("x-api-key", "sk_live_abc123", "sk_live_def456"), contract.Deps{})(u.handler)
+	h := Middleware(authRoute("x-api-key", "sk_live_abc123", "sk_live_def456").Auth)(u.handler)
 	resp := call(h, map[string]string{"X-Api-Key": "sk_live_def456"})
 	if resp.Status != 200 || u.hits != 1 {
 		t.Fatalf("status %d hits %d", resp.Status, u.hits)
@@ -74,7 +75,7 @@ func TestCaseInsensitiveHeader(t *testing.T) {
 	for _, cfgHeader := range []string{"X-API-Key", "x-api-key", "X-Api-Key"} {
 		for _, reqHeader := range []string{"x-api-key", "X-API-KEY", "X-Api-Key"} {
 			u := &upstream{}
-			h := New(authRoute(cfgHeader, "k1"), contract.Deps{})(u.handler)
+			h := Middleware(authRoute(cfgHeader, "k1").Auth)(u.handler)
 			if resp := call(h, map[string]string{reqHeader: "k1"}); resp.Status != 200 {
 				t.Fatalf("cfg %s req %s: %d", cfgHeader, reqHeader, resp.Status)
 			}
@@ -82,17 +83,17 @@ func TestCaseInsensitiveHeader(t *testing.T) {
 	}
 }
 
-func TestDefaultHeader(t *testing.T) {
+func TestMiddlewareDefaultHeader(t *testing.T) {
 	u := &upstream{}
-	h := New(authRoute("", "k1"), contract.Deps{})(u.handler)
+	h := Middleware(authRoute("", "k1").Auth)(u.handler)
 	if resp := call(h, map[string]string{"X-Api-Key": "k1"}); resp.Status != 200 {
 		t.Fatalf("status %d", resp.Status)
 	}
 }
 
-func TestCustomHeader(t *testing.T) {
+func TestMiddlewareCustomHeader(t *testing.T) {
 	u := &upstream{}
-	h := New(authRoute("authorization", "k1"), contract.Deps{})(u.handler)
+	h := Middleware(authRoute("authorization", "k1").Auth)(u.handler)
 	if resp := call(h, map[string]string{"Authorization": "k1"}); resp.Status != 200 {
 		t.Fatalf("valid: %d", resp.Status)
 	}
@@ -106,11 +107,9 @@ func TestCustomHeader(t *testing.T) {
 }
 
 func TestNoAuthPassThrough(t *testing.T) {
-	for _, r := range []*contract.Route{nil, {Path: "/x"}} {
-		u := &upstream{}
-		h := New(r, contract.Deps{})(u.handler)
-		if resp := call(h, nil); resp.Status != 200 || u.hits != 1 {
-			t.Fatalf("status %d hits %d", resp.Status, u.hits)
-		}
+	u := &upstream{}
+	h := Middleware(nil)(u.handler)
+	if resp := call(h, nil); resp.Status != 200 || u.hits != 1 {
+		t.Fatalf("status %d hits %d", resp.Status, u.hits)
 	}
 }

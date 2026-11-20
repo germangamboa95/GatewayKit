@@ -1,4 +1,4 @@
-package resptransform
+package transform
 
 import (
 	"net/http"
@@ -8,36 +8,21 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
-var (
-	reqTime  = time.Date(2026, 11, 19, 19, 43, 5, 123_000_000, time.UTC)
-	respTime = time.Date(2026, 11, 19, 19, 43, 6, 0, time.UTC)
-)
+var respTime = time.Date(2026, 11, 19, 19, 43, 6, 0, time.UTC)
 
-type fakeClock struct{ t time.Time }
-
-func (c fakeClock) Now() time.Time { return c.t }
-
-func tvar(t *testing.T, s string) *contract.Template {
-	t.Helper()
-	v, err := contract.ParseVar(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &contract.Template{Kind: contract.TemplateVar, Var: v}
-}
-
-func sampleRoute(t *testing.T) *contract.Route {
-	return &contract.Route{
+func responseRoute(t *testing.T) *config.Route {
+	return &config.Route{
 		Path: "/api/legacy",
-		RespTransform: &contract.RespTransform{
-			AddHeaders:    []contract.HeaderAdd{{Name: "x-served-by", Value: contract.Literal("gatewaykit")}},
+		RespTransform: &config.RespTransform{
+			AddHeaders:    []config.HeaderAdd{{Name: "x-served-by", Value: config.Literal("gatewaykit")}},
 			RemoveHeaders: []string{"server", "x-powered-by"},
-			Envelope: &contract.Template{Kind: contract.TemplateObject, Fields: []contract.TemplateField{
+			Envelope: &config.Template{Kind: config.TemplateObject, Fields: []config.TemplateField{
 				{Key: "data", Value: tvar(t, "$body")},
-				{Key: "gateway_metadata", Value: &contract.Template{Kind: contract.TemplateObject, Fields: []contract.TemplateField{
+				{Key: "gateway_metadata", Value: &config.Template{Kind: config.TemplateObject, Fields: []config.TemplateField{
 					{Key: "served_at", Value: tvar(t, "$response_time")},
 					{Key: "route", Value: tvar(t, "$route_path")},
 				}}},
@@ -46,22 +31,22 @@ func sampleRoute(t *testing.T) *contract.Route {
 	}
 }
 
-func newCtx(route *contract.Route, acceptEncoding string) *contract.RequestContext {
+func newCtx(route *config.Route, acceptEncoding string) *gateway.RequestContext {
 	req := httptest.NewRequest(http.MethodGet, "/api/legacy/v1/data", nil)
 	if acceptEncoding != "" {
 		req.Header.Set("Accept-Encoding", acceptEncoding)
 	}
-	return &contract.RequestContext{Req: req, Route: route, RequestTime: reqTime}
+	return &gateway.RequestContext{Req: req, Route: route, RequestTime: reqTime}
 }
 
-func upstream(status int, body string, hdr http.Header, seen *http.Header) contract.Handler {
-	return func(ctx *contract.RequestContext) *contract.Response {
+func upstream(status int, body string, hdr http.Header, seen *http.Header) gateway.Handler {
+	return func(rc *gateway.RequestContext) *gateway.Response {
 		if seen != nil {
-			*seen = ctx.Req.Header.Clone()
+			*seen = rc.Req.Header.Clone()
 		}
-		ctx.ResponseTime = respTime
-		r := &contract.Response{Status: status, Header: hdr, Body: []byte(body), FromUpstream: true}
-		ctx.Upstream = r
+		rc.ResponseTime = respTime
+		r := &gateway.Response{Status: status, Header: hdr, Body: []byte(body), FromUpstream: true}
+		rc.Upstream = r
 		return r
 	}
 }
@@ -69,7 +54,7 @@ func upstream(status int, body string, hdr http.Header, seen *http.Header) contr
 const sampleWant = `{"data":{"ok":1},"gateway_metadata":{"served_at":"2026-11-19T19:43:06.000Z","route":"/api/legacy"}}`
 
 func TestSampleEnvelope(t *testing.T) {
-	route := sampleRoute(t)
+	route := responseRoute(t)
 	var seen http.Header
 	hdr := http.Header{
 		"Content-Type":   {"text/plain"},
@@ -78,8 +63,8 @@ func TestSampleEnvelope(t *testing.T) {
 		"X-Powered-By":   {"mock"},
 		"X-Other":        {"keep"},
 	}
-	ctx := newCtx(route, "gzip")
-	resp := New(route, contract.Deps{})(upstream(200, `{"ok": 1}`, hdr, &seen))(ctx)
+	rc := newCtx(route, "gzip")
+	resp := ResponseMiddleware(route, nil)(upstream(200, `{"ok": 1}`, hdr, &seen))(rc)
 	if got := seen.Get("Accept-Encoding"); got != "identity" {
 		t.Errorf("upstream Accept-Encoding = %q", got)
 	}
@@ -98,8 +83,8 @@ func TestSampleEnvelope(t *testing.T) {
 }
 
 func TestUpstreamErrorWrapped(t *testing.T) {
-	route := sampleRoute(t)
-	resp := New(route, contract.Deps{})(upstream(503, `{"e": 1}`, http.Header{}, nil))(newCtx(route, ""))
+	route := responseRoute(t)
+	resp := ResponseMiddleware(route, nil)(upstream(503, `{"e": 1}`, http.Header{}, nil))(newCtx(route, ""))
 	want := `{"data":{"e":1},"gateway_metadata":{"served_at":"2026-11-19T19:43:06.000Z","route":"/api/legacy"}}`
 	if resp.Status != 503 || string(resp.Body) != want {
 		t.Fatalf("got %d %s", resp.Status, resp.Body)
@@ -107,13 +92,13 @@ func TestUpstreamErrorWrapped(t *testing.T) {
 }
 
 func TestBodyKinds(t *testing.T) {
-	route := sampleRoute(t)
+	route := responseRoute(t)
 	cases := map[string]string{
 		"hello": `"hello"`,
 		"":      `null`,
 	}
 	for body, data := range cases {
-		resp := New(route, contract.Deps{})(upstream(200, body, nil, nil))(newCtx(route, ""))
+		resp := ResponseMiddleware(route, nil)(upstream(200, body, nil, nil))(newCtx(route, ""))
 		want := `{"data":` + data + `,"gateway_metadata":{"served_at":"2026-11-19T19:43:06.000Z","route":"/api/legacy"}}`
 		if string(resp.Body) != want {
 			t.Errorf("body %q: got %s", body, resp.Body)
@@ -125,29 +110,29 @@ func TestBodyKinds(t *testing.T) {
 }
 
 func TestVariantB(t *testing.T) {
-	route := &contract.Route{Path: "/v2/admin", RespTransform: &contract.RespTransform{
-		Envelope: &contract.Template{Kind: contract.TemplateObject, Fields: []contract.TemplateField{
-			{Key: "result", Value: &contract.Template{Kind: contract.TemplateObject, Fields: []contract.TemplateField{
+	route := &config.Route{Path: "/v2/admin", RespTransform: &config.RespTransform{
+		Envelope: &config.Template{Kind: config.TemplateObject, Fields: []config.TemplateField{
+			{Key: "result", Value: &config.Template{Kind: config.TemplateObject, Fields: []config.TemplateField{
 				{Key: "payload", Value: tvar(t, "$body")},
-				{Key: "ok", Value: &contract.Template{Kind: contract.TemplateScalar, Raw: "true"}},
+				{Key: "ok", Value: &config.Template{Kind: config.TemplateScalar, Raw: "true"}},
 			}}},
 			{Key: "route", Value: tvar(t, "$route_path")},
 		}},
 	}}
-	resp := New(route, contract.Deps{})(upstream(200, "[1,2]", http.Header{"Content-Type": {"application/json"}}, nil))(newCtx(route, ""))
+	resp := ResponseMiddleware(route, nil)(upstream(200, "[1,2]", http.Header{"Content-Type": {"application/json"}}, nil))(newCtx(route, ""))
 	if got := string(resp.Body); got != `{"result":{"payload":[1,2],"ok":true},"route":"/v2/admin"}` {
 		t.Fatalf("got %s", got)
 	}
 }
 
 func TestGatewayErrorNotWrapped(t *testing.T) {
-	route := sampleRoute(t)
-	next := func(ctx *contract.RequestContext) *contract.Response {
-		ctx.Upstream = &contract.Response{Status: 503, Header: http.Header{}, Body: []byte(`{"e":1}`), FromUpstream: true}
-		return contract.GatewayTimeout()
+	route := responseRoute(t)
+	next := func(rc *gateway.RequestContext) *gateway.Response {
+		rc.Upstream = &gateway.Response{Status: 503, Header: http.Header{}, Body: []byte(`{"e":1}`), FromUpstream: true}
+		return gateway.GatewayTimeout()
 	}
-	resp := New(route, contract.Deps{})(next)(newCtx(route, ""))
-	want := contract.GatewayTimeout()
+	resp := ResponseMiddleware(route, nil)(next)(newCtx(route, ""))
+	want := gateway.GatewayTimeout()
 	if resp.Status != 504 || string(resp.Body) != string(want.Body) {
 		t.Fatalf("got %d %s", resp.Status, resp.Body)
 	}
@@ -157,23 +142,23 @@ func TestGatewayErrorNotWrapped(t *testing.T) {
 }
 
 func TestUpstream503ThenTimeoutGivesPlain504(t *testing.T) {
-	route := sampleRoute(t)
+	route := responseRoute(t)
 	attempts := 0
-	next := func(ctx *contract.RequestContext) *contract.Response {
-		var last *contract.Response
+	next := func(rc *gateway.RequestContext) *gateway.Response {
+		var last *gateway.Response
 		for attempt := 1; attempt <= 2; attempt++ {
 			attempts++
 			if attempt == 1 {
-				last = &contract.Response{Status: 503, Header: http.Header{"Server": {"mock"}}, Body: []byte(`{"e":1}`), FromUpstream: true}
-				ctx.Upstream = last
-				ctx.ResponseTime = respTime
+				last = &gateway.Response{Status: 503, Header: http.Header{"Server": {"mock"}}, Body: []byte(`{"e":1}`), FromUpstream: true}
+				rc.Upstream = last
+				rc.ResponseTime = respTime
 				continue
 			}
-			last = contract.GatewayTimeout()
+			last = gateway.GatewayTimeout()
 		}
 		return last
 	}
-	resp := New(route, contract.Deps{})(next)(newCtx(route, ""))
+	resp := ResponseMiddleware(route, nil)(next)(newCtx(route, ""))
 	if attempts != 2 {
 		t.Fatalf("attempts %d", attempts)
 	}
@@ -186,10 +171,10 @@ func TestUpstream503ThenTimeoutGivesPlain504(t *testing.T) {
 }
 
 func TestHeadersOnlyNoEnvelope(t *testing.T) {
-	route := sampleRoute(t)
+	route := responseRoute(t)
 	route.RespTransform.Envelope = nil
 	var seen http.Header
-	resp := New(route, contract.Deps{})(upstream(200, "raw", http.Header{"Server": {"mock"}, "Content-Type": {"text/plain"}}, &seen))(newCtx(route, "gzip"))
+	resp := ResponseMiddleware(route, nil)(upstream(200, "raw", http.Header{"Server": {"mock"}, "Content-Type": {"text/plain"}}, &seen))(newCtx(route, "gzip"))
 	if seen.Get("Accept-Encoding") != "gzip" {
 		t.Errorf("Accept-Encoding changed without envelope: %q", seen.Get("Accept-Encoding"))
 	}
@@ -202,21 +187,21 @@ func TestHeadersOnlyNoEnvelope(t *testing.T) {
 }
 
 func TestResponseTimeFallback(t *testing.T) {
-	route := sampleRoute(t)
-	next := func(ctx *contract.RequestContext) *contract.Response {
-		return &contract.Response{Status: 200, Body: []byte(`{"ok": 1}`), FromUpstream: true}
+	route := responseRoute(t)
+	next := func(rc *gateway.RequestContext) *gateway.Response {
+		return &gateway.Response{Status: 200, Body: []byte(`{"ok": 1}`), FromUpstream: true}
 	}
-	resp := New(route, contract.Deps{Clock: fakeClock{respTime}})(next)(newCtx(route, ""))
+	resp := ResponseMiddleware(route, fakeClock{respTime})(next)(newCtx(route, ""))
 	if string(resp.Body) != sampleWant {
 		t.Fatalf("got %s", resp.Body)
 	}
 }
 
-func TestPassThrough(t *testing.T) {
-	route := &contract.Route{Path: "/x"}
+func TestResponsePassThrough(t *testing.T) {
+	route := &config.Route{Path: "/x"}
 	var seen http.Header
 	hdr := http.Header{"Server": {"mock"}}
-	resp := New(route, contract.Deps{})(upstream(200, "x", hdr, &seen))(newCtx(route, "gzip"))
+	resp := ResponseMiddleware(route, nil)(upstream(200, "x", hdr, &seen))(newCtx(route, "gzip"))
 	if seen.Get("Accept-Encoding") != "gzip" || string(resp.Body) != "x" || resp.Header.Get("Server") != "mock" {
 		t.Fatal("route without transform must pass through")
 	}

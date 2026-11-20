@@ -3,12 +3,12 @@ package config
 import (
 	"testing"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 func TestDecodeTyping(t *testing.T) {
 	d := newDiag()
-	raw := Decode(doc(m("port", q("9090")), minimalRoute("strip_prefix", "false")), d)
+	raw := decode(doc(m("port", q("9090")), minimalRoute("strip_prefix", "false")), d)
 	if len(d.Errors) != 0 {
 		t.Fatal(d.Errors)
 	}
@@ -20,7 +20,7 @@ func TestDecodeTyping(t *testing.T) {
 	yes := s("yes")
 	get := s("GET")
 	d = newDiag()
-	Decode(doc(m("port", abc), minimalRoute("strip_prefix", yes, "methods", get)), d)
+	decode(doc(m("port", abc), minimalRoute("strip_prefix", yes, "methods", get)), d)
 	hasLine(t, d.Errors, loc(abc)+"gateway.port: expected an integer")
 	hasLine(t, d.Errors, loc(yes)+"routes[0].strip_prefix: expected true or false")
 	hasLine(t, d.Errors, loc(get)+"routes[0].methods: expected a list")
@@ -33,7 +33,7 @@ func TestDecodeNullIsAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := newDiag()
-	raw := Decode(root, d)
+	raw := decode(root, d)
 	r := raw.Routes[0]
 	if len(d.Errors) != 0 || r.StripPrefix != nil || r.Auth != nil || r.Retry != nil {
 		t.Fatalf("errors %v route %+v", d.Errors, r)
@@ -43,22 +43,22 @@ func TestDecodeNullIsAbsent(t *testing.T) {
 func TestDecodeTopLevel(t *testing.T) {
 	d := newDiag()
 	top := seq("a")
-	Decode(top, d)
+	decode(top, d)
 	hasLine(t, d.Errors, loc(top)+"top-level value must be a map")
 
 	d = newDiag()
-	Decode(m("routes", seq()), d)
+	decode(m("routes", seq()), d)
 	hasLine(t, d.Errors, "gateway: required field is missing")
 
 	d = newDiag()
-	Decode(m("gateway", m()), d)
+	decode(m("gateway", m()), d)
 	hasLine(t, d.Errors, "routes: required field is missing")
 }
 
 func TestDecodeUnknownKeyWarning(t *testing.T) {
 	v := q("10s")
 	d := newDiag()
-	Decode(doc(m(), minimalRoute("cache_ttl", v)), d)
+	decode(doc(m(), minimalRoute("cache_ttl", v)), d)
 	if len(d.Errors) != 0 {
 		t.Fatal(d.Errors)
 	}
@@ -67,13 +67,13 @@ func TestDecodeUnknownKeyWarning(t *testing.T) {
 
 func TestDecodeRoutesPlacement(t *testing.T) {
 	d := newDiag()
-	raw := Decode(m("gateway", m("routes", seq(minimalRoute()))), d)
+	raw := decode(m("gateway", m("routes", seq(minimalRoute()))), d)
 	if len(d.Errors) != 0 || len(raw.Routes) != 1 || raw.Routes[0].Path != "gateway.routes[0]" {
 		t.Fatalf("errors %v raw %+v", d.Errors, raw)
 	}
 
 	d = newDiag()
-	Decode(m("gateway", m("routes", seq(minimalRoute())), "routes", seq(minimalRoute())), d)
+	decode(m("gateway", m("routes", seq(minimalRoute())), "routes", seq(minimalRoute())), d)
 	hasLine(t, d.Errors, "routes set both at top level", "under gateway")
 }
 
@@ -81,7 +81,7 @@ func TestDecodeUpstreamPlacement(t *testing.T) {
 	d := newDiag()
 	r := m("path", q("/"), "timeout", q("2s"),
 		"upstream", m("url", q("http://h:1"), "circuit_breaker", m("threshold", "5")))
-	raw := Decode(doc(m(), r), d)
+	raw := decode(doc(m(), r), d)
 	if len(d.Errors) != 0 {
 		t.Fatal(d.Errors)
 	}
@@ -94,13 +94,13 @@ func TestDecodeUpstreamPlacement(t *testing.T) {
 	d = newDiag()
 	r = m("path", q("/"), "retry", m("attempts", "2"),
 		"upstream", m("url", q("http://h:1"), "retry", m("attempts", "3")))
-	Decode(doc(m(), r), d)
+	decode(doc(m(), r), d)
 	hasLine(t, d.Errors, "routes[0].retry: set both at routes[0].retry", "routes[0].upstream.retry")
 }
 
 func TestDecodeRateLimitFalse(t *testing.T) {
 	d := newDiag()
-	raw := Decode(doc(m(), minimalRoute("rate_limit", "false")), d)
+	raw := decode(doc(m(), minimalRoute("rate_limit", "false")), d)
 	if len(d.Errors) != 0 || raw.Routes[0].RateLimit == nil || !raw.Routes[0].RateLimit.Disabled {
 		t.Fatalf("errors %v", d.Errors)
 	}
@@ -108,14 +108,14 @@ func TestDecodeRateLimitFalse(t *testing.T) {
 	tr := s("true")
 	gf := s("false")
 	d = newDiag()
-	Decode(doc(m("global_rate_limit", gf), minimalRoute("rate_limit", tr)), d)
+	decode(doc(m("global_rate_limit", gf), minimalRoute("rate_limit", tr)), d)
 	hasLine(t, d.Errors, loc(tr)+"routes[0].rate_limit: expected a map or false")
 	hasLine(t, d.Errors, loc(gf)+"gateway.global_rate_limit: expected a map")
 }
 
 func TestDecodeEnumsAndMethods(t *testing.T) {
 	d := newDiag()
-	raw := Decode(doc(m(), minimalRoute(
+	raw := decode(doc(m(), minimalRoute(
 		"methods", seq(q("get"), q("delete")),
 		"rate_limit", m("strategy", "Sliding_Window"))), d)
 	if len(d.Errors) != 0 {
@@ -131,6 +131,6 @@ func TestDecodeDurationSyntax(t *testing.T) {
 	v := q("5 s")
 	r := m("path", q("/"), "upstream", m("url", q("http://h:1"), "timeout", v))
 	d := newDiag()
-	Decode(doc(m(), minimalRoute(), minimalRoute(), r), d)
+	decode(doc(m(), minimalRoute(), minimalRoute(), r), d)
 	hasLine(t, d.Errors, loc(v)+`routes[2].upstream.timeout: invalid duration "5 s"`)
 }

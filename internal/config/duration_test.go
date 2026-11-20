@@ -33,7 +33,7 @@ func TestParseDuration(t *testing.T) {
 		{"99999999999999h", false, 0, false},
 	}
 	for _, c := range cases {
-		got, err := ParseDuration(c.in, c.allowZero)
+		got, err := parseDuration(c.in, c.allowZero)
 		if (err == nil) != c.ok {
 			t.Errorf("ParseDuration(%q, %v) err = %v, want ok=%v", c.in, c.allowZero, err, c.ok)
 			continue
@@ -42,7 +42,7 @@ func TestParseDuration(t *testing.T) {
 			t.Errorf("ParseDuration(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}
-	if _, err := ParseDuration("5 s", false); err == nil || err.Error() != `invalid duration "5 s"` {
+	if _, err := parseDuration("5 s", false); err == nil || err.Error() != `invalid duration "5 s"` {
 		t.Errorf("error = %v", err)
 	}
 }

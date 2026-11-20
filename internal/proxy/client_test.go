@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
 type seen struct {
@@ -34,25 +35,25 @@ func recorder(t *testing.T, status int, respHeader map[string]string, respBody s
 	return srv, ch
 }
 
-func target(t *testing.T, raw string) *contract.Target {
-	tg, err := contract.NewTarget(raw, 1)
+func target(t *testing.T, raw string) *config.Target {
+	tg, err := config.NewTarget(raw, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tg
 }
 
-func reqCtx(method, url, body string, route *contract.Route) *contract.RequestContext {
+func reqCtx(method, url, body string, route *config.Route) *gateway.RequestContext {
 	r := httptest.NewRequest(method, url, strings.NewReader(body))
 	r.RemoteAddr = "10.0.0.5:5555"
-	return &contract.RequestContext{Req: r, Route: route, Body: []byte(body)}
+	return &gateway.RequestContext{Req: r, Route: route, Body: []byte(body)}
 }
 
 func TestClientForwardsRequest(t *testing.T) {
 	srv, ch := recorder(t, 201, map[string]string{"X-Up": "1", "Content-Type": "text/plain"}, "created")
-	route := &contract.Route{Path: "/api/users", Timeout: time.Second}
-	ctx := reqCtx("POST", "http://gateway.example:8080/api/users/7?x=1", `{"a":1}`, route)
-	h := ctx.Req.Header
+	route := &config.Route{Path: "/api/users", Timeout: time.Second}
+	rc := reqCtx("POST", "http://gateway.example:8080/api/users/7?x=1", `{"a":1}`, route)
+	h := rc.Req.Header
 	h.Set("X-Custom", "1")
 	h.Set("X-Forwarded-For", "1.2.3.4")
 	h.Set("Keep-Alive", "timeout=5")
@@ -63,7 +64,7 @@ func TestClientForwardsRequest(t *testing.T) {
 	h.Set("Te", "trailers")
 	h.Set("Accept-Encoding", "gzip")
 
-	resp, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(ctx))
+	resp, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(rc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,18 +96,18 @@ func TestClientForwardsRequest(t *testing.T) {
 
 func TestClientEnvelopeIdentityAndNoAcceptEncoding(t *testing.T) {
 	srv, ch := recorder(t, 200, nil, "ok")
-	plain := &contract.Route{Path: "/a"}
-	ctx := reqCtx("GET", "http://g/a", "", plain)
-	if _, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(ctx)); err != nil {
+	plain := &config.Route{Path: "/a"}
+	rc := reqCtx("GET", "http://g/a", "", plain)
+	if _, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(rc)); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-ch; got.header.Get("Accept-Encoding") != "" {
 		t.Fatalf("gateway added Accept-Encoding %q", got.header.Get("Accept-Encoding"))
 	}
-	env := &contract.Route{Path: "/a", RespTransform: &contract.RespTransform{Envelope: &contract.Template{}}}
-	ctx = reqCtx("GET", "http://g/a", "", env)
-	ctx.Req.Header.Set("Accept-Encoding", "gzip")
-	if _, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(ctx)); err != nil {
+	env := &config.Route{Path: "/a", RespTransform: &config.RespTransform{Envelope: &config.Template{}}}
+	rc = reqCtx("GET", "http://g/a", "", env)
+	rc.Req.Header.Set("Accept-Encoding", "gzip")
+	if _, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(rc)); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-ch; got.header.Get("Accept-Encoding") != "identity" {
@@ -116,9 +117,9 @@ func TestClientEnvelopeIdentityAndNoAcceptEncoding(t *testing.T) {
 
 func TestClientBasePathAndStrip(t *testing.T) {
 	srv, ch := recorder(t, 200, nil, "")
-	route := &contract.Route{Path: "/svc", StripPrefix: true}
-	ctx := reqCtx("GET", "http://g/svc/a?q=1", "", route)
-	if _, err := NewClient().Send(context.Background(), target(t, srv.URL+"/base"), BuildRequest(ctx)); err != nil {
+	route := &config.Route{Path: "/svc", StripPrefix: true}
+	rc := reqCtx("GET", "http://g/svc/a?q=1", "", route)
+	if _, err := NewClient().Send(context.Background(), target(t, srv.URL+"/base"), BuildRequest(rc)); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-ch; got.uri != "/base/a?q=1" {
@@ -128,8 +129,8 @@ func TestClientBasePathAndStrip(t *testing.T) {
 
 func TestClientNoRedirectAndGzipUntouched(t *testing.T) {
 	srv, _ := recorder(t, 302, map[string]string{"Location": "/elsewhere", "Content-Encoding": "gzip"}, "zz")
-	ctx := reqCtx("GET", "http://g/a", "", &contract.Route{Path: "/a"})
-	resp, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(ctx))
+	rc := reqCtx("GET", "http://g/a", "", &config.Route{Path: "/a"})
+	resp, err := NewClient().Send(context.Background(), target(t, srv.URL), BuildRequest(rc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +150,8 @@ func TestAttemptSlowBodyTimesOut(t *testing.T) {
 		io.WriteString(w, "late")
 	}))
 	defer srv.Close()
-	ctx := reqCtx("GET", "http://g/a", "", &contract.Route{Path: "/a"})
-	resp, err := Attempt(context.Background(), NewClient(), target(t, srv.URL), BuildRequest(ctx), 100*time.Millisecond)
+	rc := reqCtx("GET", "http://g/a", "", &config.Route{Path: "/a"})
+	resp, err := Attempt(context.Background(), NewClient(), target(t, srv.URL), BuildRequest(rc), 100*time.Millisecond)
 	res, status := Outcome(resp, err)
 	if status != 504 || res.Status != 504 || res.FromUpstream {
 		t.Fatalf("status %d res %+v err %v", status, res, err)
@@ -173,8 +174,8 @@ func TestAttemptClosedSocketIs502(t *testing.T) {
 			c.Close()
 		}
 	}()
-	ctx := reqCtx("POST", "http://g/a", "x", &contract.Route{Path: "/a"})
-	resp, err := Attempt(context.Background(), NewClient(), target(t, "http://"+ln.Addr().String()), BuildRequest(ctx), time.Second)
+	rc := reqCtx("POST", "http://g/a", "x", &config.Route{Path: "/a"})
+	resp, err := Attempt(context.Background(), NewClient(), target(t, "http://"+ln.Addr().String()), BuildRequest(rc), time.Second)
 	res, status := Outcome(resp, err)
 	if status != 502 || res.Status != 502 || res.FromUpstream {
 		t.Fatalf("status %d res %+v err %v", status, res, err)
@@ -185,8 +186,8 @@ func TestAttemptRefusedIs502(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := ln.Addr().String()
 	ln.Close()
-	ctx := reqCtx("GET", "http://g/a", "", &contract.Route{Path: "/a"})
-	resp, err := Attempt(context.Background(), NewClient(), target(t, "http://"+addr), BuildRequest(ctx), time.Second)
+	rc := reqCtx("GET", "http://g/a", "", &config.Route{Path: "/a"})
+	resp, err := Attempt(context.Background(), NewClient(), target(t, "http://"+addr), BuildRequest(rc), time.Second)
 	if _, status := Outcome(resp, err); status != 502 {
 		t.Fatalf("status %d err %v", status, err)
 	}
@@ -199,51 +200,21 @@ func TestAttemptClientCancelNotClassified(t *testing.T) {
 	defer srv.Close()
 	parent, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(50*time.Millisecond, cancel)
-	ctx := reqCtx("GET", "http://g/a", "", &contract.Route{Path: "/a"})
-	resp, err := Attempt(parent, NewClient(), target(t, srv.URL), BuildRequest(ctx), 5*time.Second)
+	rc := reqCtx("GET", "http://g/a", "", &config.Route{Path: "/a"})
+	resp, err := Attempt(parent, NewClient(), target(t, srv.URL), BuildRequest(rc), 5*time.Second)
 	res, status := Outcome(resp, err)
-	if status != contract.StatusClientClosed || contract.Classify(resp, err) != contract.StatusClientClosed || res.FromUpstream {
+	if status != gateway.StatusClientClosed || Classify(resp, err) != gateway.StatusClientClosed || res.FromUpstream {
 		t.Fatalf("status %d err %v", status, err)
-	}
-}
-
-func TestHandlerRoundTrip(t *testing.T) {
-	srv, ch := recorder(t, 418, map[string]string{"X-Up": "tea"}, `{"k":7}`)
-	route := &contract.Route{Path: "/api", StripPrefix: true, Timeout: time.Second,
-		Targets: []*contract.Target{target(t, srv.URL), target(t, "http://127.0.0.1:1")}}
-	h := New(route, contract.Deps{})
-	ctx := reqCtx("PUT", "http://g/api/x", "body", nil)
-	res := h(ctx)
-	got := <-ch
-	if got.uri != "/x" || got.method != "PUT" || got.body != "body" {
-		t.Fatalf("upstream saw %+v", got)
-	}
-	if res.Status != 418 || string(res.Body) != `{"k":7}` || res.Header.Get("X-Up") != "tea" || !res.FromUpstream {
-		t.Fatalf("res %+v", res)
-	}
-	if ctx.Upstream != res || ctx.ResponseTime.IsZero() {
-		t.Fatal("request context not updated")
-	}
-}
-
-func TestHandlerGatewayErrorNotFromUpstream(t *testing.T) {
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
-	addr := ln.Addr().String()
-	ln.Close()
-	route := &contract.Route{Path: "/", Timeout: time.Second, Targets: []*contract.Target{target(t, "http://"+addr)}}
-	res := New(route, contract.Deps{})(reqCtx("GET", "http://g/", "", nil))
-	if res.Status != 502 || res.FromUpstream || !strings.Contains(string(res.Body), `"bad_gateway"`) {
-		t.Fatalf("res %+v %s", res, res.Body)
 	}
 }
 
 func TestBuildRequestBodyFallbackAndTLS(t *testing.T) {
 	r := httptest.NewRequest("POST", "https://gw.example/a?z=9", strings.NewReader("raw"))
 	r.RemoteAddr = "192.0.2.1:1234"
-	ctx := &contract.RequestContext{Req: r, Route: &contract.Route{Path: "/a"}}
-	out := BuildRequest(ctx)
-	if string(out.Body) != "raw" || string(ctx.Body) != "raw" {
-		t.Fatalf("body %q ctx %q", out.Body, ctx.Body)
+	rc := &gateway.RequestContext{Req: r, Route: &config.Route{Path: "/a"}}
+	out := BuildRequest(rc)
+	if string(out.Body) != "raw" || string(rc.Body) != "raw" {
+		t.Fatalf("body %q ctx %q", out.Body, rc.Body)
 	}
 	if out.Path != "/a?z=9" || out.Method != "POST" {
 		t.Fatalf("out %+v", out)
@@ -252,7 +223,7 @@ func TestBuildRequestBodyFallbackAndTLS(t *testing.T) {
 	if h.Get("X-Forwarded-For") != "192.0.2.1" || h.Get("X-Forwarded-Proto") != "https" || h.Get("X-Forwarded-Host") != "gw.example" {
 		t.Fatalf("headers %v", h)
 	}
-	if ctx.Req.Header.Get("X-Forwarded-For") != "" {
+	if rc.Req.Header.Get("X-Forwarded-For") != "" {
 		t.Fatal("client request headers mutated")
 	}
 }

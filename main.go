@@ -16,19 +16,19 @@ import (
 	"syscall"
 	"time"
 
-	"gatewaykit/internal/balance"
-	"gatewaykit/internal/breaker"
-	"gatewaykit/internal/config"
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/healthcheck"
-	"gatewaykit/internal/middleware/auth"
-	"gatewaykit/internal/middleware/ratelimit"
-	"gatewaykit/internal/middleware/reqtransform"
-	"gatewaykit/internal/middleware/resptransform"
-	"gatewaykit/internal/proxy"
-	"gatewaykit/internal/retry"
-	"gatewaykit/internal/server"
-	"gatewaykit/internal/upstream"
+	"github.com/germangamboa95/gatewaykit/internal/auth"
+	"github.com/germangamboa95/gatewaykit/internal/balance"
+	"github.com/germangamboa95/gatewaykit/internal/breaker"
+	"github.com/germangamboa95/gatewaykit/internal/clock"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
+	"github.com/germangamboa95/gatewaykit/internal/healthcheck"
+	"github.com/germangamboa95/gatewaykit/internal/proxy"
+	"github.com/germangamboa95/gatewaykit/internal/ratelimit"
+	"github.com/germangamboa95/gatewaykit/internal/retry"
+	"github.com/germangamboa95/gatewaykit/internal/server"
+	"github.com/germangamboa95/gatewaykit/internal/transform"
+	"github.com/germangamboa95/gatewaykit/internal/upstream"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -56,13 +56,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 	}
 
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
-	deps := contract.Deps{
-		Clock:   contract.SystemClock{},
-		Sleeper: contract.SystemClock{},
-		Client:  proxy.NewClient(),
-		Logger:  logger,
-	}
-	handler := buildHandler(cfg, deps)
+	handler := buildHandler(cfg, clock.System{}, logger)
 	logRoutes(logger, cfg)
 
 	ln, err := net.Listen("tcp", ":"+strconv.Itoa(cfg.Port))
@@ -70,7 +64,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stderr 
 		logger.Error("listen failed", "port", cfg.Port, "err", err)
 		return 1
 	}
-	return serve(ctx, ln, handler, cfg, deps)
+	return serve(ctx, ln, handler, cfg, logger)
 }
 
 func printLoadError(w io.Writer, err error) {
@@ -85,53 +79,54 @@ func printLoadError(w io.Writer, err error) {
 	fmt.Fprintf(w, "config error: %v\n", err)
 }
 
-func serve(ctx context.Context, ln net.Listener, h http.Handler, cfg *contract.GatewayConfig, deps contract.Deps) int {
+func serve(ctx context.Context, ln net.Listener, h http.Handler, cfg *config.Gateway, logger *slog.Logger) int {
 	hcCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	healthcheck.Start(hcCtx, cfg.Routes, deps)
+	healthcheck.Start(hcCtx, cfg.Routes, clock.System{}, clock.System{}, logger)
 
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	deps.Logger.Info("listening", "addr", ln.Addr().String(), "routes", len(cfg.Routes))
+	logger.Info("listening", "addr", ln.Addr().String(), "routes", len(cfg.Routes))
 
 	select {
 	case err := <-errc:
-		deps.Logger.Error("server stopped", "err", err)
+		logger.Error("server stopped", "err", err)
 		return 1
 	case <-ctx.Done():
 	}
-	deps.Logger.Info("shutting down")
+	logger.Info("shutting down")
 	cancel()
 	sctx, scancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer scancel()
 	if err := srv.Shutdown(sctx); err != nil {
-		deps.Logger.Error("shutdown", "err", err)
+		logger.Error("shutdown", "err", err)
 		return 1
 	}
 	return 0
 }
 
 // buildHandler assembles every route's chain and returns the root handler.
-func buildHandler(cfg *contract.GatewayConfig, deps contract.Deps) *server.Server {
-	deps = deps.WithDefaults()
-	if deps.Client == nil {
-		deps.Client = proxy.NewClient()
-	}
-	chains := make(map[*contract.Route]contract.Handler, len(cfg.Routes))
+// sleeper waits between retries; tests pass a fake one.
+func buildHandler(cfg *config.Gateway, sleeper clock.Sleeper, logger *slog.Logger) *server.Server {
+	clk := clock.System{}
+	client := proxy.NewClient()
+	chains := make(map[*config.Route]gateway.Handler, len(cfg.Routes))
 	for _, r := range cfg.Routes {
-		chains[r] = server.Chain(terminal(r, deps),
-			ratelimit.New(r, deps),
-			auth.New(r, deps),
-			reqtransform.New(r, deps),
-			resptransform.New(r, deps),
+		chains[r] = gateway.Chain(terminal(r, client, clk, sleeper),
+			ratelimit.Middleware(r.RateLimit, clk),
+			auth.Middleware(r.Auth),
+			transform.RequestMiddleware(r, clk),
+			transform.ResponseMiddleware(r, clk),
 		)
 	}
-	return server.New(cfg, chains, deps)
+	return server.New(cfg, chains, clk, logger)
 }
 
-func terminal(r *contract.Route, deps contract.Deps) contract.Handler {
+func terminal(r *config.Route, client proxy.Sender, clk clock.Clock, sleeper clock.Sleeper) gateway.Handler {
 	opts := []upstream.Option{
+		upstream.WithClock(clk),
+		upstream.WithSleeper(sleeper),
 		upstream.WithBalancer(balance.New(r.Balance)),
 		upstream.WithPool(balance.NewPool(r)),
 	}
@@ -141,11 +136,11 @@ func terminal(r *contract.Route, deps contract.Deps) contract.Handler {
 	if r.Retry != nil {
 		opts = append(opts, upstream.WithRetry(retry.New(r.Retry)))
 	}
-	return upstream.New(r, deps, opts...)
+	return upstream.New(r, client, opts...)
 }
 
 // middlewareNames lists the stages active on r, in chain order.
-func middlewareNames(r *contract.Route) []string {
+func middlewareNames(r *config.Route) []string {
 	var names []string
 	if r.RateLimit != nil {
 		names = append(names, "rate_limit")
@@ -171,7 +166,7 @@ func middlewareNames(r *contract.Route) []string {
 	return names
 }
 
-func logRoutes(logger *slog.Logger, cfg *contract.GatewayConfig) {
+func logRoutes(logger *slog.Logger, cfg *config.Gateway) {
 	for _, r := range cfg.Routes {
 		targets := make([]string, len(r.Targets))
 		for i, t := range r.Targets {

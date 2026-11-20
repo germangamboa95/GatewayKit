@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
 type fakeClock struct {
@@ -36,10 +37,10 @@ func newClock() *fakeClock {
 	return &fakeClock{t: time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)}
 }
 
-func route(path string, methods ...string) *contract.Route {
-	r := &contract.Route{Path: path, Methods: map[string]bool{}}
+func route(path string, methods ...string) *config.Route {
+	r := &config.Route{Path: path, Methods: map[string]bool{}}
 	if len(methods) == 0 {
-		methods = contract.DefaultMethods
+		methods = config.DefaultMethods
 	}
 	for _, m := range methods {
 		r.Methods[m] = true
@@ -48,14 +49,14 @@ func route(path string, methods ...string) *contract.Route {
 	return r
 }
 
-func reply(status int, body string) contract.Handler {
-	return func(*contract.RequestContext) *contract.Response {
-		return &contract.Response{Status: status, Header: http.Header{"X-From": {"route"}}, Body: []byte(body), FromUpstream: true}
+func reply(status int, body string) gateway.Handler {
+	return func(*gateway.RequestContext) *gateway.Response {
+		return &gateway.Response{Status: status, Header: http.Header{"X-From": {"route"}}, Body: []byte(body), FromUpstream: true}
 	}
 }
 
-func quietDeps(c contract.Clock) contract.Deps {
-	return contract.Deps{Clock: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+func quiet() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 func serve(h http.Handler, method, target string, body io.Reader) *httptest.ResponseRecorder {
@@ -66,7 +67,7 @@ func serve(h http.Handler, method, target string, body io.Reader) *httptest.Resp
 
 func TestHealth(t *testing.T) {
 	clock := newClock()
-	s := New(&contract.GatewayConfig{}, nil, quietDeps(clock))
+	s := New(&config.Gateway{}, nil, clock, quiet())
 	clock.Advance(5700 * time.Millisecond)
 	rec := serve(s, "GET", "/health", nil)
 	if rec.Code != 200 {
@@ -81,7 +82,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestHealthEmptyRoutes(t *testing.T) {
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{}}, nil, quietDeps(newClock()))
+	s := New(&config.Gateway{Routes: []*config.Route{}}, nil, newClock(), quiet())
 	if rec := serve(s, "GET", "/health", nil); rec.Code != 200 {
 		t.Fatalf("health status %d", rec.Code)
 	}
@@ -99,12 +100,12 @@ func TestHealthEmptyRoutes(t *testing.T) {
 func TestHealthRouteInteraction(t *testing.T) {
 	health := route("/health", "GET", "POST", "HEAD")
 	root := route("/")
-	cfg := &contract.GatewayConfig{Routes: []*contract.Route{health, root}}
-	chains := map[*contract.Route]contract.Handler{
+	cfg := &config.Gateway{Routes: []*config.Route{health, root}}
+	chains := map[*config.Route]gateway.Handler{
 		health: reply(201, "health-route"),
 		root:   reply(202, "root-route"),
 	}
-	s := New(cfg, chains, quietDeps(newClock()))
+	s := New(cfg, chains, newClock(), quiet())
 	cases := []struct {
 		method, path string
 		status       int
@@ -128,7 +129,7 @@ func TestHealthRouteInteraction(t *testing.T) {
 
 func TestHeadHealthRoutedToRootRoute(t *testing.T) {
 	root := route("/", "GET")
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{root}}, map[*contract.Route]contract.Handler{root: reply(200, "x")}, quietDeps(newClock()))
+	s := New(&config.Gateway{Routes: []*config.Route{root}}, map[*config.Route]gateway.Handler{root: reply(200, "x")}, newClock(), quiet())
 	rec := serve(s, "HEAD", "/health", nil)
 	if rec.Code != 405 || rec.Header().Get("Allow") != "GET" {
 		t.Fatalf("HEAD /health: %d Allow=%q", rec.Code, rec.Header().Get("Allow"))
@@ -138,12 +139,12 @@ func TestHeadHealthRoutedToRootRoute(t *testing.T) {
 func TestRequestContext(t *testing.T) {
 	clock := newClock()
 	r := route("/api/users", "POST")
-	var got *contract.RequestContext
-	chain := func(ctx *contract.RequestContext) *contract.Response {
-		got = ctx
-		return reply(200, "ok")(ctx)
+	var got *gateway.RequestContext
+	chain := func(rc *gateway.RequestContext) *gateway.Response {
+		got = rc
+		return reply(200, "ok")(rc)
 	}
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{r}}, map[*contract.Route]contract.Handler{r: chain}, quietDeps(clock))
+	s := New(&config.Gateway{Routes: []*config.Route{r}}, map[*config.Route]gateway.Handler{r: chain}, clock, quiet())
 	clock.Advance(time.Minute)
 	req := httptest.NewRequest("POST", "/api/users/1?x=1", strings.NewReader(`{"a":1}`))
 	req.RemoteAddr = "[2001:db8::1]:5555"
@@ -153,7 +154,7 @@ func TestRequestContext(t *testing.T) {
 		t.Fatal("chain not called")
 	}
 	if got.ClientIP != "2001:db8::1" || got.Route != r || string(got.Body) != `{"a":1}` || got.Req != req {
-		t.Fatalf("ctx = %+v", got)
+		t.Fatalf("rc = %+v", got)
 	}
 	if !got.RequestTime.Equal(clock.Now()) {
 		t.Fatalf("RequestTime %v", got.RequestTime)
@@ -162,15 +163,15 @@ func TestRequestContext(t *testing.T) {
 
 func TestUpstreamPassThrough(t *testing.T) {
 	r := route("/api/users")
-	chain := func(*contract.RequestContext) *contract.Response {
-		return &contract.Response{
+	chain := func(*gateway.RequestContext) *gateway.Response {
+		return &gateway.Response{
 			Status:       500,
 			Header:       http.Header{"Content-Type": {"text/plain"}, "X-Upstream": {"a", "b"}, "Content-Length": {"999"}},
 			Body:         []byte("boom"),
 			FromUpstream: true,
 		}
 	}
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{r}}, map[*contract.Route]contract.Handler{r: chain}, quietDeps(newClock()))
+	s := New(&config.Gateway{Routes: []*config.Route{r}}, map[*config.Route]gateway.Handler{r: chain}, newClock(), quiet())
 	srv := httptest.NewServer(s)
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/api/users")
@@ -193,14 +194,14 @@ func TestUpstreamPassThrough(t *testing.T) {
 func TestLargeBodyAndHead(t *testing.T) {
 	r := route("/big")
 	big := bytes.Repeat([]byte("x"), 100000)
-	chain := func(ctx *contract.RequestContext) *contract.Response {
-		resp := &contract.Response{Status: 200, Header: http.Header{"Content-Length": {"100000"}}}
-		if ctx.Req.Method != "HEAD" {
+	chain := func(rc *gateway.RequestContext) *gateway.Response {
+		resp := &gateway.Response{Status: 200, Header: http.Header{"Content-Length": {"100000"}}}
+		if rc.Req.Method != "HEAD" {
 			resp.Body = big
 		}
 		return resp
 	}
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{r}}, map[*contract.Route]contract.Handler{r: chain}, quietDeps(newClock()))
+	s := New(&config.Gateway{Routes: []*config.Route{r}}, map[*config.Route]gateway.Handler{r: chain}, newClock(), quiet())
 	srv := httptest.NewServer(s)
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/big")
@@ -226,11 +227,11 @@ func TestGatewayErrors(t *testing.T) {
 	r := route("/nil")
 	p := route("/panic")
 	missing := route("/missing")
-	chains := map[*contract.Route]contract.Handler{
-		r: func(*contract.RequestContext) *contract.Response { return nil },
-		p: func(*contract.RequestContext) *contract.Response { panic("bug") },
+	chains := map[*config.Route]gateway.Handler{
+		r: func(*gateway.RequestContext) *gateway.Response { return nil },
+		p: func(*gateway.RequestContext) *gateway.Response { panic("bug") },
 	}
-	s := New(&contract.GatewayConfig{Routes: []*contract.Route{r, p, missing}}, chains, quietDeps(newClock()))
+	s := New(&config.Gateway{Routes: []*config.Route{r, p, missing}}, chains, newClock(), quiet())
 	for _, path := range []string{"/nil", "/panic", "/missing"} {
 		rec := serve(s, "GET", path, nil)
 		var body map[string]any
@@ -249,7 +250,7 @@ func TestClientIP(t *testing.T) {
 }
 
 func TestNilConfig(t *testing.T) {
-	s := New(nil, nil, contract.Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	s := New(nil, nil, nil, quiet())
 	if rec := serve(s, "GET", "/x", nil); rec.Code != 404 {
 		t.Fatalf("status %d", rec.Code)
 	}

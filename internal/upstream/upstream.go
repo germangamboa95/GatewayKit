@@ -1,54 +1,102 @@
-// Package upstream is the terminal handler: breaker, pick, proxy, record, retry (design D6).
+// Package upstream is a route's terminal handler: it checks the circuit
+// breaker, picks a target, proxies the request, records the outcome and
+// retries when the policy allows.
 package upstream
 
 import (
+	"net/http"
+	"strconv"
 	"time"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/proxy"
+	"github.com/germangamboa95/gatewaykit/internal/balance"
+	"github.com/germangamboa95/gatewaykit/internal/clock"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
+	"github.com/germangamboa95/gatewaykit/internal/proxy"
 )
 
-// ticketed is a breaker that tells the half-open trial apart from other
-// requests (breaker.Breaker implements it).
+// Balancer picks the next target from a pool. *balance.Balancer implements it.
+type Balancer interface {
+	Pick(pool balance.TargetPool) (*config.Target, bool)
+}
+
+// CircuitBreaker gates requests to the route's upstream. Release ends a
+// half-open trial that never reached the upstream. *breaker.Breaker
+// implements it.
+type CircuitBreaker interface {
+	TryPass(now time.Time) (ok bool, retryAfter int)
+	Record(ok bool, now time.Time)
+	Release()
+}
+
+// RetryPolicy decides whether to retry. attempt counts from 1 (the first
+// try). *retry.Policy implements it.
+type RetryPolicy interface {
+	ShouldRetry(status, attempt int) bool
+	Delay(attempt int) time.Duration
+}
+
+// ticketed is a CircuitBreaker that tells the half-open trial apart from
+// other requests. *breaker.Breaker implements it; the handler prefers it
+// when available.
 type ticketed interface {
 	Admit(now time.Time) (ok bool, retryAfter int, ticket uint64)
 	Settle(ticket uint64, ok bool, now time.Time)
 	Abandon(ticket uint64)
 }
 
-// Option sets a strategy on the handler. Unset strategies fall back to:
-// no breaker, no retry, first healthy target, a pool over route.Targets.
+// Option configures the handler. Unset options fall back to: no breaker, no
+// retry, the first healthy target, the route's targets as the pool, and the
+// system clock.
 type Option func(*handler)
 
-func WithBalancer(b contract.Balancer) Option { return func(h *handler) { h.balancer = b } }
+// WithBalancer sets how targets are picked.
+func WithBalancer(b Balancer) Option { return func(h *handler) { h.balancer = b } }
 
-func WithBreaker(cb contract.CircuitBreaker) Option { return func(h *handler) { h.breaker = cb } }
+// WithBreaker sets the circuit breaker.
+func WithBreaker(cb CircuitBreaker) Option { return func(h *handler) { h.breaker = cb } }
 
-func WithRetry(p contract.RetryPolicy) Option { return func(h *handler) { h.retry = p } }
+// WithRetry sets the retry policy.
+func WithRetry(p RetryPolicy) Option { return func(h *handler) { h.retry = p } }
 
-func WithPool(p contract.TargetPool) Option { return func(h *handler) { h.pool = p } }
+// WithPool sets the targets to pick from.
+func WithPool(p balance.TargetPool) Option { return func(h *handler) { h.pool = p } }
+
+// WithClock sets the clock used for breaker time and response timestamps.
+func WithClock(c clock.Clock) Option { return func(h *handler) { h.clock = c } }
+
+// WithSleeper sets what waits between retries.
+func WithSleeper(s clock.Sleeper) Option { return func(h *handler) { h.sleeper = s } }
 
 type handler struct {
-	route    *contract.Route
-	deps     contract.Deps
-	balancer contract.Balancer
-	breaker  contract.CircuitBreaker
-	retry    contract.RetryPolicy
-	pool     contract.TargetPool
+	route    *config.Route
+	client   proxy.Sender
+	clock    clock.Clock
+	sleeper  clock.Sleeper
+	balancer Balancer
+	breaker  CircuitBreaker
+	retry    RetryPolicy
+	pool     balance.TargetPool
 }
 
-// New returns the terminal handler for route. deps.Client defaults to
-// proxy.NewClient(); deps.Clock and deps.Sleeper drive breaker time and retry waits.
-func New(route *contract.Route, deps contract.Deps, opts ...Option) contract.Handler {
-	h := &handler{route: route, deps: deps.WithDefaults()}
+// New returns the terminal handler for route. A nil client means
+// proxy.NewClient().
+func New(route *config.Route, client proxy.Sender, opts ...Option) gateway.Handler {
+	h := &handler{route: route, client: client}
 	for _, o := range opts {
 		o(h)
 	}
-	if h.deps.Client == nil {
-		h.deps.Client = proxy.NewClient()
+	if h.client == nil {
+		h.client = proxy.NewClient()
+	}
+	if h.clock == nil {
+		h.clock = clock.System{}
+	}
+	if h.sleeper == nil {
+		h.sleeper = clock.System{}
 	}
 	if h.pool == nil {
-		h.pool = NewPool(route)
+		h.pool = targets(route.Targets)
 	}
 	if h.balancer == nil {
 		h.balancer = firstHealthy{}
@@ -56,12 +104,12 @@ func New(route *contract.Route, deps contract.Deps, opts ...Option) contract.Han
 	return h.serve
 }
 
-func (h *handler) serve(ctx *contract.RequestContext) *contract.Response {
-	if ctx.Route == nil {
-		ctx.Route = h.route
+func (h *handler) serve(rc *gateway.RequestContext) *gateway.Response {
+	if rc.Route == nil {
+		rc.Route = h.route
 	}
-	reqCtx := ctx.Req.Context()
-	out := proxy.BuildRequest(ctx)
+	ctx := rc.Req.Context()
+	out := proxy.BuildRequest(rc)
 	maxAttempts := 0
 	if h.route.Retry != nil && h.route.Retry.Attempts > 0 {
 		maxAttempts = h.route.Retry.Attempts
@@ -72,18 +120,18 @@ func (h *handler) serve(ctx *contract.RequestContext) *contract.Response {
 		if h.breaker != nil {
 			ok, retryAfter, tk := h.admit()
 			if !ok {
-				return contract.BreakerOpen(retryAfter)
+				return BreakerOpen(retryAfter)
 			}
 			ticket = tk
 		}
 		t, ok := h.balancer.Pick(h.pool)
 		if !ok || t == nil {
 			h.release(ticket)
-			return contract.NoHealthyUpstream()
+			return gateway.NoHealthyUpstream()
 		}
-		resp, err := proxy.Attempt(reqCtx, h.deps.Client, t, out, h.route.Timeout)
+		resp, err := proxy.Attempt(ctx, h.client, t, out, h.route.Timeout)
 		res, status := proxy.Outcome(resp, err)
-		if status == contract.StatusClientClosed && !res.FromUpstream {
+		if status == gateway.StatusClientClosed && !res.FromUpstream {
 			h.release(ticket)
 			return res
 		}
@@ -91,19 +139,19 @@ func (h *handler) serve(ctx *contract.RequestContext) *contract.Response {
 
 		if h.retry == nil || (maxAttempts > 0 && attempt >= maxAttempts) || !h.retry.ShouldRetry(status, attempt) {
 			if res.FromUpstream {
-				ctx.Upstream = res
-				ctx.ResponseTime = h.deps.Clock.Now()
+				rc.Upstream = res
+				rc.ResponseTime = h.clock.Now()
 			}
 			return res
 		}
-		if err := h.deps.Sleeper.Sleep(reqCtx, h.retry.Delay(attempt)); err != nil {
+		if err := h.sleeper.Sleep(ctx, h.retry.Delay(attempt)); err != nil {
 			return proxy.ClientClosed()
 		}
 	}
 }
 
 func (h *handler) admit() (bool, int, uint64) {
-	now := h.deps.Clock.Now()
+	now := h.clock.Now()
 	if tb, ok := h.breaker.(ticketed); ok {
 		return tb.Admit(now)
 	}
@@ -115,7 +163,7 @@ func (h *handler) record(ticket uint64, ok bool) {
 	if h.breaker == nil {
 		return
 	}
-	now := h.deps.Clock.Now()
+	now := h.clock.Now()
 	if tb, isT := h.breaker.(ticketed); isT {
 		tb.Settle(ticket, ok, now)
 		return
@@ -134,9 +182,18 @@ func (h *handler) release(ticket uint64) {
 	h.breaker.Release()
 }
 
+// BreakerOpen is the circuit-breaker 503: only "error" and "retry_after",
+// plus Retry-After.
+func BreakerOpen(retryAfter int) *gateway.Response {
+	r := gateway.ErrorResponse(http.StatusServiceUnavailable, gateway.CodeServiceUnavailable, "",
+		map[string]any{"retry_after": retryAfter})
+	r.Header.Set("Retry-After", strconv.Itoa(retryAfter))
+	return r
+}
+
 type firstHealthy struct{}
 
-func (firstHealthy) Pick(p contract.TargetPool) (*contract.Target, bool) {
+func (firstHealthy) Pick(p balance.TargetPool) (*config.Target, bool) {
 	for _, t := range p.Targets() {
 		if p.Healthy(t) {
 			return t, true
@@ -145,25 +202,10 @@ func (firstHealthy) Pick(p contract.TargetPool) (*contract.Target, bool) {
 	return nil, false
 }
 
-// Pool is a contract.TargetPool over a route's targets using each target's
-// own health state.
-type Pool struct {
-	targets   []*contract.Target
-	threshold int
-}
+// targets is the default pool: the route's targets, each reporting its own
+// health state.
+type targets []*config.Target
 
-// NewPool returns a Pool over route.Targets; MarkProbe uses the route's
-// health_check unhealthy_threshold.
-func NewPool(route *contract.Route) *Pool {
-	p := &Pool{targets: route.Targets, threshold: 1}
-	if route.HealthCheck != nil && route.HealthCheck.UnhealthyThreshold > 0 {
-		p.threshold = route.HealthCheck.UnhealthyThreshold
-	}
-	return p
-}
+func (ts targets) Targets() []*config.Target { return ts }
 
-func (p *Pool) Targets() []*contract.Target { return p.targets }
-
-func (p *Pool) Healthy(t *contract.Target) bool { return t.Healthy() }
-
-func (p *Pool) MarkProbe(t *contract.Target, ok bool) { t.RecordProbe(ok, p.threshold) }
+func (targets) Healthy(t *config.Target) bool { return t.Healthy() }

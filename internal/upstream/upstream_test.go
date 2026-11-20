@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/balance"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
+	"github.com/germangamboa95/gatewaykit/internal/proxy"
 )
 
 type fakeClock struct{ now time.Time }
@@ -41,11 +44,11 @@ type result struct {
 type fakeClient struct {
 	mu      sync.Mutex
 	results []result
-	targets []*contract.Target
+	targets []*config.Target
 	bodies  []string
 }
 
-func (c *fakeClient) Send(ctx context.Context, t *contract.Target, r *contract.OutRequest) (*contract.Response, error) {
+func (c *fakeClient) Send(ctx context.Context, t *config.Target, r *proxy.Request) (*gateway.Response, error) {
 	c.mu.Lock()
 	i := len(c.targets)
 	c.targets = append(c.targets, t)
@@ -59,12 +62,12 @@ func (c *fakeClient) Send(ctx context.Context, t *contract.Target, r *contract.O
 	if res.err != nil {
 		return nil, res.err
 	}
-	return &contract.Response{Status: res.status, Header: http.Header{"X-Attempt": {string(rune('0' + i + 1))}}, FromUpstream: true}, nil
+	return &gateway.Response{Status: res.status, Header: http.Header{"X-Attempt": {string(rune('0' + i + 1))}}, FromUpstream: true}, nil
 }
 
 type rrBalancer struct{ next int }
 
-func (b *rrBalancer) Pick(p contract.TargetPool) (*contract.Target, bool) {
+func (b *rrBalancer) Pick(p balance.TargetPool) (*config.Target, bool) {
 	ts := p.Targets()
 	for range ts {
 		t := ts[b.next%len(ts)]
@@ -108,30 +111,41 @@ func (p fakeRetry) ShouldRetry(status, attempt int) bool { return p.always || p.
 
 func (p fakeRetry) Delay(attempt int) time.Duration { return p.initial << (attempt - 1) }
 
-func mkRoute(t *testing.T, attempts int, urls ...string) *contract.Route {
-	r := &contract.Route{Path: "/api", Timeout: time.Second}
+func mkRoute(t *testing.T, attempts int, urls ...string) *config.Route {
+	r := &config.Route{Path: "/api", Timeout: time.Second}
 	for _, u := range urls {
-		tg, err := contract.NewTarget(u, 1)
+		tg, err := config.NewTarget(u, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
 		r.Targets = append(r.Targets, tg)
 	}
 	if attempts > 0 {
-		r.Retry = &contract.Retry{Attempts: attempts}
+		r.Retry = &config.Retry{Attempts: attempts}
 	}
 	return r
 }
 
-func mkCtx(body string) *contract.RequestContext {
+func mkCtx(body string) *gateway.RequestContext {
 	r := httptest.NewRequest("POST", "http://g/api/x", strings.NewReader(body))
-	return &contract.RequestContext{Req: r, Body: []byte(body)}
+	return &gateway.RequestContext{Req: r, Body: []byte(body)}
 }
 
-func deps(c contract.UpstreamClient) (contract.Deps, *fakeClock, *fakeSleeper) {
+// testDeps is a client plus the fake clock and sleeper the handler runs on.
+type testDeps struct {
+	client  proxy.Sender
+	clock   *fakeClock
+	sleeper *fakeSleeper
+}
+
+func deps(c proxy.Sender) (testDeps, *fakeClock, *fakeSleeper) {
 	clk := &fakeClock{now: time.Unix(1000, 0)}
 	sl := &fakeSleeper{clock: clk}
-	return contract.Deps{Clock: clk, Sleeper: sl, Client: c}, clk, sl
+	return testDeps{client: c, clock: clk, sleeper: sl}, clk, sl
+}
+
+func newHandler(route *config.Route, d testDeps, opts ...Option) gateway.Handler {
+	return New(route, d.client, append([]Option{WithClock(d.clock), WithSleeper(d.sleeper)}, opts...)...)
 }
 
 var on5xx = map[int]bool{502: true, 503: true, 504: true}
@@ -140,14 +154,14 @@ func TestRetryWaitsRepicksAndReturnsLast(t *testing.T) {
 	route := mkRoute(t, 3, "http://a:1", "http://b:1")
 	c := &fakeClient{results: []result{{status: 503}, {status: 503}, {status: 200}}}
 	d, _, sl := deps(c)
-	h := New(route, d, WithBalancer(&rrBalancer{}), WithRetry(fakeRetry{on: on5xx, initial: time.Second}))
-	ctx := mkCtx(`{"a":1}`)
-	res := h(ctx)
+	h := newHandler(route, d, WithBalancer(&rrBalancer{}), WithRetry(fakeRetry{on: on5xx, initial: time.Second}))
+	rc := mkCtx(`{"a":1}`)
+	res := h(rc)
 	if res.Status != 200 || !res.FromUpstream || res.Header.Get("X-Attempt") != "3" {
 		t.Fatalf("res %+v", res)
 	}
-	if ctx.Upstream != res || ctx.ResponseTime != time.Unix(1003, 0) {
-		t.Fatalf("upstream %v time %v", ctx.Upstream, ctx.ResponseTime)
+	if rc.Upstream != res || rc.ResponseTime != time.Unix(1003, 0) {
+		t.Fatalf("upstream %v time %v", rc.Upstream, rc.ResponseTime)
 	}
 	want := []string{"a:1", "b:1", "a:1"}
 	for i, tg := range c.targets {
@@ -164,7 +178,7 @@ func TestRetryExhaustedReturnsLastUpstreamResponse(t *testing.T) {
 	route := mkRoute(t, 3, "http://a:1")
 	c := &fakeClient{results: []result{{status: 503}}}
 	d, _, sl := deps(c)
-	res := New(route, d, WithRetry(fakeRetry{always: true, initial: time.Second}))(mkCtx(""))
+	res := newHandler(route, d, WithRetry(fakeRetry{always: true, initial: time.Second}))(mkCtx(""))
 	if len(c.targets) != 3 || res.Status != 503 || !res.FromUpstream || res.Header.Get("X-Attempt") != "3" {
 		t.Fatalf("attempts %d res %+v", len(c.targets), res)
 	}
@@ -177,7 +191,7 @@ func TestNoRetryOnUnlistedStatus(t *testing.T) {
 	route := mkRoute(t, 3, "http://a:1")
 	c := &fakeClient{results: []result{{status: 500}}}
 	d, _, _ := deps(c)
-	res := New(route, d, WithRetry(fakeRetry{on: on5xx, initial: time.Second}))(mkCtx(""))
+	res := newHandler(route, d, WithRetry(fakeRetry{on: on5xx, initial: time.Second}))(mkCtx(""))
 	if len(c.targets) != 1 || res.Status != 500 {
 		t.Fatalf("attempts %d status %d", len(c.targets), res.Status)
 	}
@@ -187,13 +201,13 @@ func TestConnectionErrorRetriedAs502(t *testing.T) {
 	route := mkRoute(t, 2, "http://a:1")
 	c := &fakeClient{results: []result{{err: errors.New("connection refused")}}}
 	d, _, _ := deps(c)
-	res := New(route, d, WithRetry(fakeRetry{on: map[int]bool{502: true}}))(mkCtx(""))
+	res := newHandler(route, d, WithRetry(fakeRetry{on: map[int]bool{502: true}}))(mkCtx(""))
 	if len(c.targets) != 2 || res.Status != 502 || res.FromUpstream || !strings.Contains(string(res.Body), "bad_gateway") {
 		t.Fatalf("attempts %d res %+v", len(c.targets), res)
 	}
 	c = &fakeClient{results: []result{{err: errors.New("connection refused")}}}
 	d, _, _ = deps(c)
-	New(route, d, WithRetry(fakeRetry{on: map[int]bool{500: true}}))(mkCtx(""))
+	newHandler(route, d, WithRetry(fakeRetry{on: map[int]bool{500: true}}))(mkCtx(""))
 	if len(c.targets) != 1 {
 		t.Fatalf("502 retried with on [500]: %d attempts", len(c.targets))
 	}
@@ -204,7 +218,7 @@ func TestBreakerCheckedBeforeEachAttempt(t *testing.T) {
 	c := &fakeClient{results: []result{{status: 503}}}
 	d, clk, _ := deps(c)
 	cb := &fakeBreaker{allow: 2, retryAfter: 30}
-	res := New(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx, initial: time.Second}))(mkCtx(""))
+	res := newHandler(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx, initial: time.Second}))(mkCtx(""))
 	if len(c.targets) != 2 {
 		t.Fatalf("upstream got %d requests", len(c.targets))
 	}
@@ -224,7 +238,7 @@ func TestBreakerRecordsSuccessBelow500(t *testing.T) {
 	c := &fakeClient{results: []result{{status: 404}}}
 	d, _, _ := deps(c)
 	cb := &fakeBreaker{allow: 10}
-	New(route, d, WithBreaker(cb))(mkCtx(""))
+	newHandler(route, d, WithBreaker(cb))(mkCtx(""))
 	if len(cb.records) != 1 || !cb.records[0] || cb.releases != 0 {
 		t.Fatalf("records %v releases %d", cb.records, cb.releases)
 	}
@@ -235,7 +249,7 @@ func TestBreakerOpenBeatsNoHealthyUpstream(t *testing.T) {
 	route.Targets[0].SetHealthy(false)
 	c := &fakeClient{results: []result{{status: 200}}}
 	d, _, _ := deps(c)
-	res := New(route, d, WithBreaker(&fakeBreaker{allow: 0, retryAfter: 5}))(mkCtx(""))
+	res := newHandler(route, d, WithBreaker(&fakeBreaker{allow: 0, retryAfter: 5}))(mkCtx(""))
 	if res.Status != 503 || !strings.Contains(string(res.Body), "service_unavailable") {
 		t.Fatalf("res %s", res.Body)
 	}
@@ -249,7 +263,7 @@ func TestHalfOpenAllUnhealthyReleasesTrial(t *testing.T) {
 	c := &fakeClient{results: []result{{status: 200}}}
 	d, _, _ := deps(c)
 	cb := &fakeBreaker{allow: 1}
-	res := New(route, d, WithBreaker(cb), WithBalancer(&rrBalancer{}), WithRetry(fakeRetry{always: true}))(mkCtx(""))
+	res := newHandler(route, d, WithBreaker(cb), WithBalancer(&rrBalancer{}), WithRetry(fakeRetry{always: true}))(mkCtx(""))
 	if res.Status != 503 || res.FromUpstream || !strings.Contains(string(res.Body), `"no_healthy_upstream"`) || !strings.Contains(string(res.Body), `"message"`) {
 		t.Fatalf("res %+v %s", res, res.Body)
 	}
@@ -263,18 +277,18 @@ func TestClientCancelNotRecorded(t *testing.T) {
 	c := &fakeClient{results: []result{{block: true}}}
 	d, _, sl := deps(c)
 	cb := &fakeBreaker{allow: 10}
-	ctx := mkCtx("")
+	rc := mkCtx("")
 	rctx, cancel := context.WithCancel(context.Background())
-	ctx.Req = ctx.Req.WithContext(rctx)
+	rc.Req = rc.Req.WithContext(rctx)
 	time.AfterFunc(20*time.Millisecond, cancel)
-	res := New(route, d, WithBreaker(cb), WithRetry(fakeRetry{always: true}))(ctx)
-	if res.Status != contract.StatusClientClosed || res.FromUpstream {
+	res := newHandler(route, d, WithBreaker(cb), WithRetry(fakeRetry{always: true}))(rc)
+	if res.Status != gateway.StatusClientClosed || res.FromUpstream {
 		t.Fatalf("res %+v", res)
 	}
 	if len(cb.records) != 0 || cb.releases != 1 || len(c.targets) != 1 || len(sl.slept) != 0 {
 		t.Fatalf("records %v releases %d sends %d slept %v", cb.records, cb.releases, len(c.targets), sl.slept)
 	}
-	if ctx.Upstream != nil {
+	if rc.Upstream != nil {
 		t.Fatal("upstream set on cancel")
 	}
 }
@@ -284,8 +298,8 @@ func TestCancelDuringRetryWaitStops(t *testing.T) {
 	c := &fakeClient{results: []result{{status: 503}}}
 	d, _, sl := deps(c)
 	sl.cancel = true
-	res := New(route, d, WithRetry(fakeRetry{always: true}))(mkCtx(""))
-	if len(c.targets) != 1 || res.Status != contract.StatusClientClosed {
+	res := newHandler(route, d, WithRetry(fakeRetry{always: true}))(mkCtx(""))
+	if len(c.targets) != 1 || res.Status != gateway.StatusClientClosed {
 		t.Fatalf("sends %d status %d", len(c.targets), res.Status)
 	}
 }
@@ -296,13 +310,13 @@ func TestTimeoutIsGateway504NotFromUpstream(t *testing.T) {
 	c := &fakeClient{results: []result{{block: true}}}
 	d, _, _ := deps(c)
 	cb := &fakeBreaker{allow: 10}
-	ctx := mkCtx("")
-	res := New(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx}))(ctx)
+	rc := mkCtx("")
+	res := newHandler(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx}))(rc)
 	if res.Status != 504 || res.FromUpstream || !strings.Contains(string(res.Body), "gateway_timeout") {
 		t.Fatalf("res %+v %s", res, res.Body)
 	}
-	if len(c.targets) != 2 || len(cb.records) != 2 || cb.records[0] || ctx.Upstream != nil {
-		t.Fatalf("sends %d records %v upstream %v", len(c.targets), cb.records, ctx.Upstream)
+	if len(c.targets) != 2 || len(cb.records) != 2 || cb.records[0] || rc.Upstream != nil {
+		t.Fatalf("sends %d records %v upstream %v", len(c.targets), cb.records, rc.Upstream)
 	}
 }
 
@@ -311,7 +325,7 @@ func TestDefaultsSingleAttemptFirstHealthy(t *testing.T) {
 	route.Targets[0].SetHealthy(false)
 	c := &fakeClient{results: []result{{status: 503}}}
 	d, _, _ := deps(c)
-	res := New(route, d)(mkCtx(""))
+	res := newHandler(route, d)(mkCtx(""))
 	if len(c.targets) != 1 || c.targets[0].URL.Host != "b:1" || res.Status != 503 {
 		t.Fatalf("sends %d status %d", len(c.targets), res.Status)
 	}
@@ -335,46 +349,26 @@ func TestRealClientRoundTrip(t *testing.T) {
 	route := mkRoute(t, 2, srv.URL)
 	route.StripPrefix = true
 	d, _, _ := deps(nil)
-	d.Client = nil
-	res := New(route, d, WithRetry(fakeRetry{on: on5xx}))(mkCtx("x"))
+	res := newHandler(route, d, WithRetry(fakeRetry{on: on5xx}))(mkCtx("x"))
 	if res.Status != 200 || string(res.Body) != "/x" || !res.FromUpstream || hits != 2 {
 		t.Fatalf("res %+v %q hits %d", res, res.Body, hits)
 	}
 }
 
-func TestPoolMarkProbe(t *testing.T) {
-	route := mkRoute(t, 0, "http://a:1")
-	route.HealthCheck = &contract.HealthCheck{UnhealthyThreshold: 2}
-	p := NewPool(route)
-	tg := route.Targets[0]
-	p.MarkProbe(tg, false)
-	if !p.Healthy(tg) {
-		t.Fatal("unhealthy after 1 failure")
-	}
-	p.MarkProbe(tg, false)
-	if p.Healthy(tg) {
-		t.Fatal("healthy after 2 failures")
-	}
-	p.MarkProbe(tg, true)
-	if !p.Healthy(tg) {
-		t.Fatal("not recovered")
-	}
-}
-
 func TestUpstream499IsRecordedNotCancel(t *testing.T) {
 	route := mkRoute(t, 0, "http://a:1")
-	c := &fakeClient{results: []result{{status: contract.StatusClientClosed}}}
+	c := &fakeClient{results: []result{{status: gateway.StatusClientClosed}}}
 	d, _, _ := deps(c)
 	cb := &fakeBreaker{allow: 10}
-	ctx := mkCtx("")
-	res := New(route, d, WithBreaker(cb))(ctx)
-	if res.Status != contract.StatusClientClosed || !res.FromUpstream {
+	rc := mkCtx("")
+	res := newHandler(route, d, WithBreaker(cb))(rc)
+	if res.Status != gateway.StatusClientClosed || !res.FromUpstream {
 		t.Fatalf("res %+v", res)
 	}
 	if len(cb.records) != 1 || !cb.records[0] || cb.releases != 0 {
 		t.Fatalf("records %v releases %d", cb.records, cb.releases)
 	}
-	if ctx.Upstream == nil {
+	if rc.Upstream == nil {
 		t.Fatal("upstream response not stored")
 	}
 }
@@ -406,21 +400,21 @@ func TestTicketBreakerGetsAttemptTickets(t *testing.T) {
 	c := &fakeClient{results: []result{{status: 503}, {status: 200}}}
 	d, _, _ := deps(c)
 	cb := &ticketBreaker{fakeBreaker: fakeBreaker{allow: 10}}
-	New(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx}))(mkCtx(""))
+	newHandler(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx}))(mkCtx(""))
 	if len(cb.settled) != 2 || cb.settled[0] != 101 || cb.settled[1] != 102 || len(cb.records) != 0 {
 		t.Fatalf("settled %v records %v", cb.settled, cb.records)
 	}
 
 	route.Targets[0].SetHealthy(false)
 	cb2 := &ticketBreaker{fakeBreaker: fakeBreaker{allow: 10}}
-	New(route, d, WithBreaker(cb2), WithPool(healthPool{route.Targets}))(mkCtx(""))
+	newHandler(route, d, WithBreaker(cb2), WithPool(healthPool{route.Targets}))(mkCtx(""))
 	if len(cb2.released) != 1 || cb2.released[0] != 101 || cb2.releases != 0 {
 		t.Fatalf("released %v releases %d", cb2.released, cb2.releases)
 	}
 }
 
-type healthPool struct{ ts []*contract.Target }
+type healthPool struct{ ts []*config.Target }
 
-func (p healthPool) Targets() []*contract.Target           { return p.ts }
-func (p healthPool) Healthy(t *contract.Target) bool       { return t.Healthy() }
-func (p healthPool) MarkProbe(t *contract.Target, ok bool) {}
+func (p healthPool) Targets() []*config.Target           { return p.ts }
+func (p healthPool) Healthy(t *config.Target) bool       { return t.Healthy() }
+func (p healthPool) MarkProbe(t *config.Target, ok bool) {}

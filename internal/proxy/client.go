@@ -11,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
 var hopHeaders = []string{"Connection", "Keep-Alive", "Te", "Trailer", "Transfer-Encoding", "Upgrade"}
@@ -39,8 +40,8 @@ func RemoveHopHeaders(h http.Header) {
 // BuildRequest turns the request context into the outgoing request: method,
 // rewritten path, buffered body, end-to-end headers and X-Forwarded-*.
 // The target base path and Host are applied by the client.
-func BuildRequest(ctx *contract.RequestContext) *contract.OutRequest {
-	r := ctx.Req
+func BuildRequest(rc *gateway.RequestContext) *Request {
+	r := rc.Req
 	h := r.Header.Clone()
 	if h == nil {
 		h = http.Header{}
@@ -48,7 +49,7 @@ func BuildRequest(ctx *contract.RequestContext) *contract.OutRequest {
 	RemoveHopHeaders(h)
 	h.Del("Host")
 
-	ip := ctx.ClientIP
+	ip := rc.ClientIP
 	if ip == "" {
 		ip = r.RemoteAddr
 		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
@@ -68,7 +69,7 @@ func BuildRequest(ctx *contract.RequestContext) *contract.OutRequest {
 	h.Set("X-Forwarded-Proto", proto)
 	h.Set("X-Forwarded-Host", r.Host)
 
-	route := ctx.Route
+	route := rc.Route
 	if route != nil && route.RespTransform != nil && route.RespTransform.Envelope != nil {
 		h.Set("Accept-Encoding", "identity")
 	}
@@ -80,27 +81,26 @@ func BuildRequest(ctx *contract.RequestContext) *contract.OutRequest {
 		strip = route.StripPrefix
 		routePath = route.Path
 	}
-	return &contract.OutRequest{
+	return &Request{
 		Method: r.Method,
 		Path:   RewritePath(routePath, strip, path, r.URL.RawQuery),
 		Header: h,
-		Body:   requestBody(ctx),
+		Body:   requestBody(rc),
 	}
 }
 
-func requestBody(ctx *contract.RequestContext) []byte {
-	if ctx.Body != nil || ctx.Req.Body == nil || ctx.Req.Body == http.NoBody {
-		return ctx.Body
+func requestBody(rc *gateway.RequestContext) []byte {
+	if rc.Body != nil || rc.Req.Body == nil || rc.Req.Body == http.NoBody {
+		return rc.Body
 	}
-	b, err := io.ReadAll(ctx.Req.Body)
+	b, err := io.ReadAll(rc.Req.Body)
 	if err == nil {
-		ctx.Body = b
+		rc.Body = b
 	}
 	return b
 }
 
-// Client is the upstream HTTP client (design D7). It satisfies
-// contract.UpstreamClient.
+// Client is the upstream HTTP client. It implements Sender.
 type Client struct {
 	HTTP *http.Client
 }
@@ -125,7 +125,7 @@ func NewClient() *Client {
 
 // Send performs one request against t and buffers the whole response body
 // inside ctx. Errors after ctx ends wrap ctx.Err().
-func (c *Client) Send(ctx context.Context, t *contract.Target, r *contract.OutRequest) (*contract.Response, error) {
+func (c *Client) Send(ctx context.Context, t *config.Target, r *Request) (*gateway.Response, error) {
 	u := *t.URL
 	full := JoinPath(t.URL.Path, r.Path)
 	path, query, _ := strings.Cut(full, "?")
@@ -163,7 +163,7 @@ func (c *Client) Send(ctx context.Context, t *contract.Target, r *contract.OutRe
 	}
 	h := resp.Header.Clone()
 	RemoveHopHeaders(h)
-	return &contract.Response{Status: resp.StatusCode, Header: h, Body: b, FromUpstream: true}, nil
+	return &gateway.Response{Status: resp.StatusCode, Header: h, Body: b, FromUpstream: true}, nil
 }
 
 func wrapCtx(ctx context.Context, err error) error {

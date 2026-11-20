@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 var reqTime = time.Date(2026, 11, 19, 19, 43, 5, 123_000_000, time.UTC)
 
-func mustVar(t *testing.T, s string) contract.Var {
+func mustVar(t *testing.T, s string) config.Var {
 	t.Helper()
-	v, err := contract.ParseVar(s)
+	v, err := config.ParseVar(s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestResolve(t *testing.T) {
 		"$literal:":        "",
 	}
 	for in, want := range cases {
-		v, err := contract.ParseVar(in)
+		v, err := config.ParseVar(in)
 		if err != nil {
 			t.Fatalf("%q: %v", in, err)
 		}
@@ -49,14 +49,14 @@ func TestResolve(t *testing.T) {
 
 func TestResolveNonUTC(t *testing.T) {
 	loc := time.FixedZone("x", -5*3600)
-	got := Resolve(contract.Var{Kind: contract.VarRequestTime}, Env{RequestTime: reqTime.In(loc)})
+	got := Resolve(config.Var{Kind: config.VarRequestTime}, Env{RequestTime: reqTime.In(loc)})
 	if got != "2026-11-19T19:43:05.123Z" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func sampleAdds(t *testing.T) []contract.HeaderAdd {
-	return []contract.HeaderAdd{
+func sampleAdds(t *testing.T) []config.HeaderAdd {
+	return []config.HeaderAdd{
 		{Name: "x-gateway", Value: mustVar(t, "gatewaykit")},
 		{Name: "x-request-start", Value: mustVar(t, "$request_time")},
 	}
@@ -89,7 +89,7 @@ func TestApplyHeadersAbsentRemove(t *testing.T) {
 
 func TestApplyHeadersRemoveThenAdd(t *testing.T) {
 	h := http.Header{"X-Gateway": {"client", "second"}}
-	ApplyHeaders(h, []string{"X-GATEWAY"}, []contract.HeaderAdd{{Name: "x-gateway", Value: contract.Literal("gatewaykit")}}, Env{})
+	ApplyHeaders(h, []string{"X-GATEWAY"}, []config.HeaderAdd{{Name: "x-gateway", Value: config.Literal("gatewaykit")}}, Env{})
 	if got := h.Values("X-Gateway"); !reflect.DeepEqual(got, []string{"gatewaykit"}) {
 		t.Fatalf("got %v", got)
 	}
@@ -98,7 +98,7 @@ func TestApplyHeadersRemoveThenAdd(t *testing.T) {
 func TestApplyHeadersResponse(t *testing.T) {
 	h := http.Header{"Server": {"mock"}, "X-Powered-By": {"mock"}, "Content-Type": {"text/plain"}}
 	ApplyHeaders(h, []string{"server", "x-powered-by"},
-		[]contract.HeaderAdd{{Name: "x-served-by", Value: contract.Literal("gatewaykit")}}, Env{})
+		[]config.HeaderAdd{{Name: "x-served-by", Value: config.Literal("gatewaykit")}}, Env{})
 	want := http.Header{"Content-Type": {"text/plain"}, "X-Served-By": {"gatewaykit"}}
 	if !reflect.DeepEqual(h, want) {
 		t.Fatalf("got %v", h)
@@ -111,12 +111,12 @@ func TestApplyHeadersManagedIgnored(t *testing.T) {
 		"Content-Length": {"10"},
 		"Connection":     {"keep-alive"},
 	}
-	add := []contract.HeaderAdd{
-		{Name: "host", Value: contract.Literal("evil.example")},
-		{Name: "content-length", Value: contract.Literal("1")},
-		{Name: "transfer-encoding", Value: contract.Literal("chunked")},
-		{Name: "proxy-authorization", Value: contract.Literal("x")},
-		{Name: "upgrade", Value: contract.Literal("h2c")},
+	add := []config.HeaderAdd{
+		{Name: "host", Value: config.Literal("evil.example")},
+		{Name: "content-length", Value: config.Literal("1")},
+		{Name: "transfer-encoding", Value: config.Literal("chunked")},
+		{Name: "proxy-authorization", Value: config.Literal("x")},
+		{Name: "upgrade", Value: config.Literal("h2c")},
 	}
 	ApplyHeaders(h, []string{"Host", "Content-Length", "Connection"}, add, Env{})
 	want := http.Header{

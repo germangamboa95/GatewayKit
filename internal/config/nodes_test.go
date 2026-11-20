@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 var lineNo int
@@ -65,7 +65,7 @@ func doc(gateway *yamlparse.Node, routes ...*yamlparse.Node) *yamlparse.Node {
 	return m("gateway", gateway, "routes", seq(items...))
 }
 
-func newDiag() *Diag { return &Diag{File: "gateway.yaml"} }
+func newDiag() *diag { return &diag{File: "gateway.yaml"} }
 
 func hasLine(t *testing.T, lines []string, want ...string) {
 	t.Helper()

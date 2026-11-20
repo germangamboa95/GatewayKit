@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
-func cfg(n int, w time.Duration, strategy, per string) *contract.RateLimit {
-	return &contract.RateLimit{Requests: n, Window: w, Strategy: strategy, Per: per}
+func cfg(n int, w time.Duration, strategy config.Strategy, per config.Per) *config.RateLimit {
+	return &config.RateLimit{Requests: n, Window: w, Strategy: strategy, Per: per}
 }
 
 func at(sec int64, ms ...int64) time.Time {
@@ -29,7 +29,7 @@ func TestNewNil(t *testing.T) {
 }
 
 func TestFixedWindowResetsAtBoundary(t *testing.T) {
-	l := New(cfg(10, 10*time.Second, contract.StrategyFixedWindow, contract.PerIP))
+	l := New(cfg(10, 10*time.Second, config.StrategyFixedWindow, config.PerIP))
 	base := int64(1_700_000_000) // multiple of 10
 	for i := range 10 {
 		d := l.Allow("a", at(base+int64(i)))
@@ -59,7 +59,7 @@ func TestFixedWindowResetValue(t *testing.T) {
 }
 
 func TestFixedRetryAfter(t *testing.T) {
-	l := New(cfg(1, 10*time.Second, contract.StrategyFixedWindow, ""))
+	l := New(cfg(1, 10*time.Second, config.StrategyFixedWindow, ""))
 	l.Allow("a", at(1000000))
 	d := l.Allow("a", at(1000002, 500))
 	if d.Allowed || d.RetryAfter != 8 {
@@ -68,7 +68,7 @@ func TestFixedRetryAfter(t *testing.T) {
 }
 
 func TestRejectedDoNotExtendBlock(t *testing.T) {
-	l := New(cfg(2, 10*time.Second, contract.StrategyFixedWindow, ""))
+	l := New(cfg(2, 10*time.Second, config.StrategyFixedWindow, ""))
 	for i := range 2 {
 		l.Allow("a", at(1000000+int64(i)))
 	}
@@ -83,7 +83,7 @@ func TestRejectedDoNotExtendBlock(t *testing.T) {
 }
 
 func TestSlidingWindow(t *testing.T) {
-	l := New(cfg(30, 60*time.Second, contract.StrategySlidingWindow, contract.PerIP))
+	l := New(cfg(30, 60*time.Second, config.StrategySlidingWindow, config.PerIP))
 	base := int64(1_700_000_000)
 	for i := range 30 {
 		d := l.Allow("a", at(base))
@@ -102,7 +102,7 @@ func TestSlidingWindow(t *testing.T) {
 }
 
 func TestSlidingResetIsOldest(t *testing.T) {
-	l := New(cfg(3, 10*time.Second, contract.StrategySlidingWindow, ""))
+	l := New(cfg(3, 10*time.Second, config.StrategySlidingWindow, ""))
 	l.Allow("a", at(100))
 	l.Allow("a", at(104))
 	d := l.Allow("a", at(107))
@@ -120,7 +120,7 @@ func TestSlidingResetIsOldest(t *testing.T) {
 }
 
 func TestSlidingMemoryBounded(t *testing.T) {
-	l := New(cfg(5, time.Minute, contract.StrategySlidingWindow, ""))
+	l := New(cfg(5, time.Minute, config.StrategySlidingWindow, ""))
 	for i := range 100 {
 		l.Allow("a", at(1000, int64(i)))
 	}
@@ -128,7 +128,7 @@ func TestSlidingMemoryBounded(t *testing.T) {
 	if len(b.buf) > 5 || b.n != 5 {
 		t.Fatalf("buf len %d n %d", len(b.buf), b.n)
 	}
-	big := New(cfg(1000, time.Minute, contract.StrategySlidingWindow, ""))
+	big := New(cfg(1000, time.Minute, config.StrategySlidingWindow, ""))
 	big.Allow("a", at(1000))
 	if n := len(big.buckets["a"].buf); n > 8 {
 		t.Fatalf("eager allocation: %d", n)
@@ -136,7 +136,7 @@ func TestSlidingMemoryBounded(t *testing.T) {
 }
 
 func TestPerIPBuckets(t *testing.T) {
-	l := New(cfg(2, time.Second, "", contract.PerIP))
+	l := New(cfg(2, time.Second, "", config.PerIP))
 	for _, ip := range []string{"1.1.1.1", "2.2.2.2", "1.1.1.1", "2.2.2.2"} {
 		if !l.Allow(l.Key(ip), at(1000)).Allowed {
 			t.Fatalf("%s rejected", ip)
@@ -145,7 +145,7 @@ func TestPerIPBuckets(t *testing.T) {
 }
 
 func TestGlobalBucket(t *testing.T) {
-	l := New(cfg(2, time.Second, "", contract.PerGlobal))
+	l := New(cfg(2, time.Second, "", config.PerGlobal))
 	l.Allow(l.Key("1.1.1.1"), at(1000))
 	l.Allow(l.Key("2.2.2.2"), at(1000))
 	if l.Allow(l.Key("1.1.1.1"), at(1000)).Allowed {
@@ -168,7 +168,7 @@ func TestSeparateLimiters(t *testing.T) {
 }
 
 func TestIdleSweep(t *testing.T) {
-	for _, s := range []string{contract.StrategyFixedWindow, contract.StrategySlidingWindow} {
+	for _, s := range []config.Strategy{config.StrategyFixedWindow, config.StrategySlidingWindow} {
 		l := New(cfg(2, time.Minute, s, ""))
 		l.Allow("a", at(1000))
 		l.Allow("a", at(1000))
@@ -205,7 +205,7 @@ func TestClientIP(t *testing.T) {
 }
 
 func TestConcurrent(t *testing.T) {
-	l := New(cfg(1000, time.Minute, contract.StrategySlidingWindow, ""))
+	l := New(cfg(1000, time.Minute, config.StrategySlidingWindow, ""))
 	done := make(chan int)
 	for range 10 {
 		go func() {

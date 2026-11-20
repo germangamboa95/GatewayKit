@@ -1,5 +1,4 @@
-// Package contract holds the shared types every GatewayKit track codes against.
-package contract
+package config
 
 import (
 	"fmt"
@@ -8,27 +7,48 @@ import (
 	"time"
 )
 
+// Balance is a load-balancing strategy.
+type Balance string
+
 const (
-	BalanceRoundRobin         = "round_robin"
-	BalanceWeightedRoundRobin = "weighted_round_robin"
-
-	StrategyFixedWindow   = "fixed_window"
-	StrategySlidingWindow = "sliding_window"
-
-	PerIP     = "ip"
-	PerGlobal = "global"
-
-	BackoffFixed       = "fixed"
-	BackoffExponential = "exponential"
-
-	AuthTypeAPIKey = "api_key"
+	BalanceRoundRobin         Balance = "round_robin"
+	BalanceWeightedRoundRobin Balance = "weighted_round_robin"
 )
+
+// Strategy is a rate-limit window strategy.
+type Strategy string
+
+const (
+	StrategyFixedWindow   Strategy = "fixed_window"
+	StrategySlidingWindow Strategy = "sliding_window"
+)
+
+// Per is what a rate limit counts against.
+type Per string
+
+const (
+	PerIP     Per = "ip"
+	PerGlobal Per = "global"
+)
+
+// Backoff is a retry backoff strategy.
+type Backoff string
+
+const (
+	BackoffFixed       Backoff = "fixed"
+	BackoffExponential Backoff = "exponential"
+)
+
+// AuthType is an authentication scheme.
+type AuthType string
+
+const AuthTypeAPIKey AuthType = "api_key"
 
 // DefaultMethods is the method list a route gets when it sets none, in Allow order.
 var DefaultMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 
-// GatewayConfig is the normalized model (config spec §10).
-type GatewayConfig struct {
+// Gateway is the normalized config (config spec §10).
+type Gateway struct {
 	Port   int
 	Routes []*Route
 }
@@ -42,14 +62,14 @@ type Route struct {
 	StripPrefix bool
 
 	Targets []*Target
-	Balance string
+	Balance Balance
 	Timeout time.Duration
 
 	Retry          *Retry
 	HealthCheck    *HealthCheck
 	RateLimit      *RateLimit
 	Auth           *Auth
-	CircuitBreaker *CircuitBreakerConfig
+	CircuitBreaker *CircuitBreaker
 	ReqTransform   *ReqTransform
 	RespTransform  *RespTransform
 }
@@ -76,8 +96,10 @@ func NewTarget(rawURL string, weight int) (*Target, error) {
 	return &Target{URL: u, Weight: weight}, nil
 }
 
+// Healthy reports whether the target is in rotation.
 func (t *Target) Healthy() bool { return !t.unhealthy.Load() }
 
+// SetHealthy sets the health state; marking a target healthy resets its failure count.
 func (t *Target) SetHealthy(ok bool) {
 	t.unhealthy.Store(!ok)
 	if ok {
@@ -102,35 +124,38 @@ func (t *Target) RecordProbe(ok bool, threshold int) bool {
 	return t.Healthy()
 }
 
-// Retry: Attempts is the total number of tries, including the first.
+// Retry re-sends failed requests. Attempts is the total number of tries, including the first.
 type Retry struct {
 	Attempts     int
-	Backoff      string
+	Backoff      Backoff
 	InitialDelay time.Duration
 	On           map[int]bool
 }
 
+// HealthCheck probes Path every Interval; UnhealthyThreshold consecutive failures take a target out.
 type HealthCheck struct {
 	Path               string
 	Interval           time.Duration
 	UnhealthyThreshold int
 }
 
+// RateLimit allows Requests per Window, counted per client IP or globally.
 type RateLimit struct {
 	Requests int
 	Window   time.Duration
-	Strategy string
-	Per      string
+	Strategy Strategy
+	Per      Per
 }
 
-// Auth: Header is lowercase; Keys keep config order.
+// Auth is API-key authentication. Header is lowercase; Keys keep config order.
 type Auth struct {
-	Type   string
+	Type   AuthType
 	Header string
 	Keys   []string
 }
 
-type CircuitBreakerConfig struct {
+// CircuitBreaker opens after Threshold failures within Window and stays open for Cooldown.
+type CircuitBreaker struct {
 	Threshold int
 	Window    time.Duration
 	Cooldown  time.Duration

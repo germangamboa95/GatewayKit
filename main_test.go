@@ -14,9 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/config"
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/server"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/server"
 )
 
 type seen struct {
@@ -97,14 +96,11 @@ func newSample(t *testing.T) *sample {
 	if len(cfg.Routes) != 5 {
 		t.Fatalf("routes = %d, want 5", len(cfg.Routes))
 	}
-	s.h = buildHandler(cfg, contract.Deps{
-		Sleeper: s.sleeps,
-		Logger:  discardLogger(),
-	})
+	s.h = buildHandler(cfg, s.sleeps, discardLogger())
 	return s
 }
 
-func loadText(t *testing.T, text string) *contract.GatewayConfig {
+func loadText(t *testing.T, text string) *config.Gateway {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "gateway.yaml")
 	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
@@ -304,7 +300,7 @@ func TestSampleInternalBreaker(t *testing.T) {
 
 func TestEmptyRoutes(t *testing.T) {
 	cfg := loadText(t, "gateway:\n  port: 8080\nroutes: []\n")
-	h := buildHandler(cfg, contract.Deps{Logger: discardLogger()})
+	h := buildHandler(cfg, nil, discardLogger())
 	if rec := do(h, "GET", "/health", "", nil); rec.Code != 200 {
 		t.Fatalf("/health = %d", rec.Code)
 	}
@@ -340,14 +336,14 @@ func TestMiddlewareNames(t *testing.T) {
 
 func TestServeShutdown(t *testing.T) {
 	cfg := loadText(t, "gateway:\n  port: 8080\nroutes: []\n")
-	deps := contract.Deps{Logger: discardLogger()}.WithDefaults()
+	logger := discardLogger()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
-	go func() { done <- serve(ctx, ln, buildHandler(cfg, deps), cfg, deps) }()
+	go func() { done <- serve(ctx, ln, buildHandler(cfg, nil, logger), cfg, logger) }()
 	resp, err := http.Get("http://" + ln.Addr().String() + "/health")
 	if err != nil {
 		t.Fatal(err)

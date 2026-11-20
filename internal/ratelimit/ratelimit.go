@@ -1,4 +1,5 @@
-// Package ratelimit implements per-route fixed and sliding window limiters.
+// Package ratelimit implements per-route fixed and sliding window limiters
+// and the rate-limit middleware (config spec §6).
 package ratelimit
 
 import (
@@ -7,10 +8,20 @@ import (
 	"sync"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
-// Limiter is one route's bucket store. It implements contract.RateLimiter.
+// Decision is a limiter verdict. Reset is Unix seconds; RetryAfter is
+// whole seconds (at least 1 when !Allowed).
+type Decision struct {
+	Allowed    bool
+	Limit      int
+	Remaining  int
+	Reset      int64
+	RetryAfter int
+}
+
+// Limiter is one route's bucket store.
 type Limiter struct {
 	requests int
 	window   int64
@@ -35,18 +46,16 @@ type bucket struct {
 	n    int
 }
 
-var _ contract.RateLimiter = (*Limiter)(nil)
-
 // New returns a limiter for cfg, or nil when cfg is nil or unusable.
-func New(cfg *contract.RateLimit) *Limiter {
+func New(cfg *config.RateLimit) *Limiter {
 	if cfg == nil || cfg.Requests < 1 || cfg.Window <= 0 {
 		return nil
 	}
 	return &Limiter{
 		requests: cfg.Requests,
 		window:   int64(cfg.Window),
-		sliding:  cfg.Strategy == contract.StrategySlidingWindow,
-		global:   cfg.Per == contract.PerGlobal,
+		sliding:  cfg.Strategy == config.StrategySlidingWindow,
+		global:   cfg.Per == config.PerGlobal,
 		buckets:  make(map[string]*bucket),
 		lru:      list.New(),
 	}
@@ -72,7 +81,7 @@ func (l *Limiter) Len() int {
 
 // Allow records one request for key at now and returns the verdict.
 // Rejected requests do not count.
-func (l *Limiter) Allow(key string, now time.Time) contract.Decision {
+func (l *Limiter) Allow(key string, now time.Time) Decision {
 	t := now.UnixNano()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -92,14 +101,14 @@ func (l *Limiter) Allow(key string, now time.Time) contract.Decision {
 	return l.allowFixed(b, t)
 }
 
-func (l *Limiter) allowFixed(b *bucket, t int64) contract.Decision {
+func (l *Limiter) allowFixed(b *bucket, t int64) Decision {
 	start := floorDiv(t, l.window) * l.window
 	if b.start != start {
 		b.start = start
 		b.count = 0
 	}
 	end := start + l.window
-	d := contract.Decision{Limit: l.requests, Reset: ceilSeconds(end)}
+	d := Decision{Limit: l.requests, Reset: ceilSeconds(end)}
 	if b.count < l.requests {
 		b.count++
 		d.Allowed = true
@@ -110,12 +119,12 @@ func (l *Limiter) allowFixed(b *bucket, t int64) contract.Decision {
 	return d
 }
 
-func (l *Limiter) allowSliding(b *bucket, t int64) contract.Decision {
+func (l *Limiter) allowSliding(b *bucket, t int64) Decision {
 	for b.n > 0 && b.buf[b.head]+l.window <= t {
 		b.head = (b.head + 1) % len(b.buf)
 		b.n--
 	}
-	d := contract.Decision{Limit: l.requests}
+	d := Decision{Limit: l.requests}
 	if b.n < l.requests {
 		b.push(t, l.requests)
 		d.Allowed = true
