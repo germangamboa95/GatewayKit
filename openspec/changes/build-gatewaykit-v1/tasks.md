@@ -150,7 +150,7 @@ When each piece of work starts:
   - **Health, variant C:** a target goes unhealthy via `/__mock/health`, then recovers.
   - **Balance:** 8 sample `/api/products` requests give 6 on `products-a` and 2 on `products-b`, counted from mock logs.
 - [x] 13.4 [harness] Add the host-side dead-target check to `scripts/ci.sh` per design D11; verify 502s, then all `/c/health` traffic on `products-a` within 3s, then recovery after `docker compose start products-b`
-- [ ] 13.5 [orchestrator] Merge groups 9 and 13 and write `gates/M3.md` (retry timings, breaker states, 3:1 counts, health transitions); verify `scripts/ci.sh` passes
+- [x] 13.5 [orchestrator] Merge groups 9 and 13 and write `gates/M3.md` (retry timings, breaker states, 3:1 counts, health transitions); verify `scripts/ci.sh` passes
 
 ## 14. M4 transforms (F4, F6)
 
@@ -160,12 +160,12 @@ When each piece of work starts:
   - **Requests:** sample `/api/legacy`, comparing the client request with what the mock received.
   - **Responses:** the envelope and header changes; `Server` and `X-Powered-By` removed; an upstream 5xx wrapped with its status kept; `X-Mock-Body` giving a raw-string `$body`; gateway errors not wrapped.
   - **Variant B:** the nested envelope, byte for byte.
-- [ ] 14.4 [orchestrator] Merge groups 10 and 14 and write `gates/M4.md` with side-by-side request and response pairs; verify `scripts/ci.sh` passes
+- [x] 14.4 [orchestrator] Merge groups 10 and 14 and write `gates/M4.md` with side-by-side request and response pairs; verify `scripts/ci.sh` passes
 
 ## 15. M5 finish (G2, G3)
 
 - [x] 15.1 [harness] G2: write `.github/workflows/ci.yml` to run `scripts/ci.sh`; verify `scripts/ci.sh` exits 0 locally across all four configs
-- [ ] 15.2 [orchestrator] G3: write `README.md` (how to run, configs, config spec §14 decisions, design D12, `rate_limit: false`); verify every command in it runs as written
+- [x] 15.2 [orchestrator] G3: write `README.md` (how to run, configs, config spec §14 decisions, design D12, `rate_limit: false`); verify every command in it runs as written
 - [ ] 15.3 [orchestrator] Run every gate, write `gates/M5.md`, and open the pull request per the apply guidance; verify CI passes on it
 
 ## Workflow follow-up
