@@ -126,6 +126,7 @@ type RawAuth struct {
 // RawHeader is one headers.add entry.
 type RawHeader struct {
 	Name  string
+	Key   *yamlparse.Node
 	Value *Str
 }
 
@@ -196,7 +197,7 @@ func (dc *decoder) fields(n *yamlparse.Node, path string, known ...string) map[s
 			}
 		}
 		if !ok {
-			dc.d.Warnf(keyNode(n, v), join(path, k), "unknown key, ignored")
+			dc.d.Warnf(keyNode(n, k, v), join(path, k), "unknown key, ignored")
 			continue
 		}
 		if !IsNull(v) {
@@ -206,8 +207,12 @@ func (dc *decoder) fields(n *yamlparse.Node, path string, known ...string) map[s
 	return out
 }
 
-// keyNode picks the best location for a key: its value, else the map.
-func keyNode(m, v *yamlparse.Node) *yamlparse.Node {
+// keyNode picks the best location for key k of map m: the key itself, else
+// its value, else the map.
+func keyNode(m *yamlparse.Node, k string, v *yamlparse.Node) *yamlparse.Node {
+	if p, ok := m.KeyPos[k]; ok && p.Line > 0 {
+		return &yamlparse.Node{Kind: yamlparse.Scalar, Value: k, Line: p.Line, Col: p.Col}
+	}
 	if v != nil && v.Line > 0 {
 		return v
 	}
@@ -314,7 +319,8 @@ func Decode(root *yamlparse.Node, d *Diag) *Raw {
 		}
 		if n := g["routes"]; n != nil {
 			if t := top["routes"]; t != nil {
-				d.Errorf(n, "gateway.routes", "routes set both at top level (line %d) and under gateway (line %d)", t.Line, n.Line)
+				d.Errorf(keyNode(gw, "routes", n), "gateway.routes", "routes set both at top level (line %d) and under gateway (line %d)",
+					keyNode(root, "routes", t).Line, keyNode(gw, "routes", n).Line)
 			}
 			routesNode, routesPath = n, "gateway.routes"
 		}
@@ -388,8 +394,9 @@ func (dc *decoder) route(n *yamlparse.Node, path string) *RawRoute {
 		rn, un := f[key], uf[key]
 		switch {
 		case rn != nil && un != nil:
-			dc.d.Errorf(rn, join(path, key), "set both at %s (line %d) and %s (line %d)",
-				join(path, key), rn.Line, join(path, "upstream."+key), un.Line)
+			rk, uk := keyNode(n, key, rn), keyNode(r.Upstream.N, key, un)
+			dc.d.Errorf(rk, join(path, key), "set both at %s (line %d) and %s (line %d)",
+				join(path, key), rk.Line, join(path, "upstream."+key), uk.Line)
 			return nil, ""
 		case un != nil:
 			return un, join(path, "upstream."+key)
@@ -570,11 +577,11 @@ func (dc *decoder) stringMap(n *yamlparse.Node, path string) []*RawHeader {
 		v := n.Map[k]
 		p := join(path, k)
 		if IsNull(v) {
-			dc.d.Errorf(keyNode(n, v), p, "expected a string value")
+			dc.d.Errorf(keyNode(n, k, v), p, "expected a string value")
 			continue
 		}
 		if s := dc.strVal(v, p); s != nil {
-			out = append(out, &RawHeader{Name: k, Value: s})
+			out = append(out, &RawHeader{Name: k, Key: keyNode(n, k, v), Value: s})
 		}
 	}
 	return out
