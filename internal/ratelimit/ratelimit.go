@@ -2,6 +2,7 @@
 package ratelimit
 
 import (
+	"container/list"
 	"net"
 	"sync"
 	"time"
@@ -16,12 +17,14 @@ type Limiter struct {
 	sliding  bool
 	global   bool
 
-	mu        sync.Mutex
-	buckets   map[string]*bucket
-	lastSweep int64
+	mu      sync.Mutex
+	buckets map[string]*bucket
+	lru     *list.List
 }
 
 type bucket struct {
+	key      string
+	elem     *list.Element
 	lastUsed int64
 
 	start int64
@@ -45,6 +48,7 @@ func New(cfg *contract.RateLimit) *Limiter {
 		sliding:  cfg.Strategy == contract.StrategySlidingWindow,
 		global:   cfg.Per == contract.PerGlobal,
 		buckets:  make(map[string]*bucket),
+		lru:      list.New(),
 	}
 }
 
@@ -72,11 +76,14 @@ func (l *Limiter) Allow(key string, now time.Time) contract.Decision {
 	t := now.UnixNano()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.maybeSweep(t)
+	l.evictIdle(t)
 	b := l.buckets[key]
 	if b == nil {
-		b = &bucket{}
+		b = &bucket{key: key}
+		b.elem = l.lru.PushFront(b)
 		l.buckets[key] = b
+	} else {
+		l.lru.MoveToFront(b.elem)
 	}
 	b.lastUsed = t
 	if l.sliding {
@@ -135,12 +142,16 @@ func (b *bucket) push(t int64, limit int) {
 	b.n++
 }
 
-func (l *Limiter) maybeSweep(t int64) {
-	if l.lastSweep != 0 && t-l.lastSweep < l.window {
-		return
+// evictIdle deletes buckets idle for at least 2x window, oldest first.
+func (l *Limiter) evictIdle(t int64) {
+	for e := l.lru.Back(); e != nil; e = l.lru.Back() {
+		b := e.Value.(*bucket)
+		if t-b.lastUsed < 2*l.window {
+			return
+		}
+		l.lru.Remove(e)
+		delete(l.buckets, b.key)
 	}
-	l.lastSweep = t
-	l.sweep(t)
 }
 
 // Sweep deletes buckets idle for at least 2x window and returns how many it removed.
@@ -154,6 +165,7 @@ func (l *Limiter) sweep(t int64) int {
 	removed := 0
 	for k, b := range l.buckets {
 		if t-b.lastUsed >= 2*l.window {
+			l.lru.Remove(b.elem)
 			delete(l.buckets, k)
 			removed++
 		}

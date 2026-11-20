@@ -2,9 +2,19 @@
 package upstream
 
 import (
+	"time"
+
 	"gatewaykit/internal/contract"
 	"gatewaykit/internal/proxy"
 )
+
+// ticketed is a breaker that tells the half-open trial apart from other
+// requests (breaker.Breaker implements it).
+type ticketed interface {
+	Admit(now time.Time) (ok bool, retryAfter int, ticket uint64)
+	Settle(ticket uint64, ok bool, now time.Time)
+	Abandon(ticket uint64)
+}
 
 // Option sets a strategy on the handler. Unset strategies fall back to:
 // no breaker, no retry, first healthy target, a pool over route.Targets.
@@ -58,25 +68,26 @@ func (h *handler) serve(ctx *contract.RequestContext) *contract.Response {
 	}
 
 	for attempt := 1; ; attempt++ {
+		var ticket uint64
 		if h.breaker != nil {
-			if ok, retryAfter := h.breaker.TryPass(h.deps.Clock.Now()); !ok {
+			ok, retryAfter, tk := h.admit()
+			if !ok {
 				return contract.BreakerOpen(retryAfter)
 			}
+			ticket = tk
 		}
 		t, ok := h.balancer.Pick(h.pool)
 		if !ok || t == nil {
-			h.release()
+			h.release(ticket)
 			return contract.NoHealthyUpstream()
 		}
 		resp, err := proxy.Attempt(reqCtx, h.deps.Client, t, out, h.route.Timeout)
 		res, status := proxy.Outcome(resp, err)
-		if status == contract.StatusClientClosed {
-			h.release()
+		if status == contract.StatusClientClosed && !res.FromUpstream {
+			h.release(ticket)
 			return res
 		}
-		if h.breaker != nil {
-			h.breaker.Record(status < 500, h.deps.Clock.Now())
-		}
+		h.record(ticket, status < 500)
 
 		if h.retry == nil || (maxAttempts > 0 && attempt >= maxAttempts) || !h.retry.ShouldRetry(status, attempt) {
 			if res.FromUpstream {
@@ -91,10 +102,36 @@ func (h *handler) serve(ctx *contract.RequestContext) *contract.Response {
 	}
 }
 
-func (h *handler) release() {
-	if h.breaker != nil {
-		h.breaker.Release()
+func (h *handler) admit() (bool, int, uint64) {
+	now := h.deps.Clock.Now()
+	if tb, ok := h.breaker.(ticketed); ok {
+		return tb.Admit(now)
 	}
+	ok, ra := h.breaker.TryPass(now)
+	return ok, ra, 0
+}
+
+func (h *handler) record(ticket uint64, ok bool) {
+	if h.breaker == nil {
+		return
+	}
+	now := h.deps.Clock.Now()
+	if tb, isT := h.breaker.(ticketed); isT {
+		tb.Settle(ticket, ok, now)
+		return
+	}
+	h.breaker.Record(ok, now)
+}
+
+func (h *handler) release(ticket uint64) {
+	if h.breaker == nil {
+		return
+	}
+	if tb, ok := h.breaker.(ticketed); ok {
+		tb.Abandon(ticket)
+		return
+	}
+	h.breaker.Release()
 }
 
 type firstHealthy struct{}
