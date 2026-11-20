@@ -66,9 +66,9 @@ When each piece of work starts:
 
 ## 5. HTTP core (B1 to B3, agent `http`)
 
-- [ ] 5.1 B1: build the root handler per design D6 and answer exactly `GET /health` with floored `uptime_seconds`; verify `httptest` tests, including `HEAD /health` and `POST /health` being routed
-- [ ] 5.2 B2: route by longest prefix on segment boundaries, `/` as catch-all, 404, and 405 with `Allow` built from `MethodList`; verify a table test per request-routing scenario
-- [ ] 5.3 B3: build the pipeline runner and the access log line; verify tests that an early exit skips later stages and that the log line carries method, path, status, route and duration
+- [x] 5.1 B1: build the root handler per design D6 and answer exactly `GET /health` with floored `uptime_seconds`; verify `httptest` tests, including `HEAD /health` and `POST /health` being routed
+- [x] 5.2 B2: route by longest prefix on segment boundaries, `/` as catch-all, 404, and 405 with `Allow` built from `MethodList`; verify a table test per request-routing scenario
+- [x] 5.3 B3: build the pipeline runner and the access log line; verify tests that an early exit skips later stages and that the log line carries method, path, status, route and duration
 
 ## 6. Proxy core (C1 to C3, agent `proxy`)
 
@@ -85,8 +85,8 @@ When each piece of work starts:
 
 ## 8. Rate limiter and auth (E1, E8, agent `policy`)
 
-- [ ] 8.1 E1: build clock-aligned fixed windows, bounded sliding logs, per-route stores keyed by IP or global, the reset and remaining values from the rate-limiting spec, and the 2x-window idle sweep; verify fake-clock unit tests per rate-limiting spec scenario
-- [ ] 8.2 E8: build the API-key authenticator (constant time, case-insensitive header, missing vs invalid); verify unit tests
+- [x] 8.1 E1: build clock-aligned fixed windows, bounded sliding logs, per-route stores keyed by IP or global, the reset and remaining values from the rate-limiting spec, and the 2x-window idle sweep; verify fake-clock unit tests per rate-limiting spec scenario
+- [x] 8.2 E8: build the API-key authenticator (constant time, case-insensitive header, missing vs invalid); verify unit tests
 
 ## 9. Balancer, breaker, retry (E2 to E4, agent `resilience`)
 
@@ -123,8 +123,8 @@ When each piece of work starts:
 
 ## 12. M2 global features (F2, F3)
 
-- [ ] 12.1 [policy] F2: fill `internal/middleware/ratelimit` (client IP from the socket address, 429 body and headers, `X-RateLimit-*` on allowed responses, none when disabled); verify unit tests, including `X-Forwarded-For` being ignored
-- [ ] 12.2 [policy] F3: fill `internal/middleware/auth`; verify unit tests for both 401 bodies, the case-insensitive header, and the key forwarded unchanged
+- [x] 12.1 [policy] F2: fill `internal/middleware/ratelimit` (client IP from the socket address, 429 body and headers, `X-RateLimit-*` on allowed responses, none when disabled); verify unit tests, including `X-Forwarded-For` being ignored
+- [x] 12.2 [policy] F3: fill `internal/middleware/auth`; verify unit tests for both 401 bodies, the case-insensitive header, and the key forwarded unchanged
 - [ ] 12.3 [harness] Write e2e `tests/ratelimit_test.go` and `tests/auth_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 12.1 and 12.2 merge. They cover:
   - **Sample limits:** `/api/users` 30 per 60s sliding; `/api/orders` 10 per 10s fixed, using the window helper; 100 per 60s inherited.
   - **Counting:** separate buckets per route; 404, 405 and `/health` not counted; a spoofed `X-Forwarded-For` ignored.
