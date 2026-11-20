@@ -250,7 +250,7 @@ func compileHeaders(t *RawTransform, d *Diag) ([]contract.HeaderAdd, []string) {
 }
 
 func compileMapping(t *RawTransform, d *Diag) *contract.Mapping {
-	m := &contract.Mapping{Entries: []contract.MappingEntry{}}
+	m := &contract.Mapping{}
 	for _, h := range t.Mapping {
 		dest := strings.Split(h.Name, ".")
 		if hasEmpty(dest) {
@@ -311,13 +311,13 @@ func isPrefix(a, b []string) bool {
 func compileTemplate(n *yamlparse.Node, path string, d *Diag) *contract.Template {
 	switch n.Kind {
 	case yamlparse.Map:
-		t := &contract.Template{Kind: contract.TemplateObject, Fields: []contract.TemplateField{}}
+		t := &contract.Template{Kind: contract.TemplateObject}
 		for _, k := range n.Keys {
 			t.Fields = append(t.Fields, contract.TemplateField{Key: k, Value: compileTemplate(n.Map[k], join(path, k), d)})
 		}
 		return t
 	case yamlparse.Seq:
-		t := &contract.Template{Kind: contract.TemplateArray, Items: []*contract.Template{}}
+		t := &contract.Template{Kind: contract.TemplateArray}
 		for i, it := range n.Items {
 			t.Items = append(t.Items, compileTemplate(it, idx(path, i), d))
 		}
