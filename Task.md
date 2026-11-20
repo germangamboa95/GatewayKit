@@ -7,7 +7,7 @@
 
 ### Task
 
-### Build Guidelines
+Given (base_spec.md and gateway_config_spec.md) -> produce -> working system.
 
 ### Persistent instructions (do this always)
 
@@ -20,13 +20,13 @@
   - Use as many sub agents as possible to speed up completion
 - Continue until there is no more plan to execute
 - You must keep track of work in this file
-- Commit your work once done and open a pr
 
 ### Execution Guidelines
 
 - Always act as the orchestrator if sub agents are available.
 - Your context is limited, protected it
 - If you need to pass the output of one sub agent to the next use a scratch file to avoid loading it into context unless needed
-- Use a worktree `./.agents/worktrees` to execute the work in there.
+- Use a worktree `./.agents/worktrees` to execute the work in there then merge back into upstream once the work is done.
+- use conventional commits as you go along.
 
 ## Plan

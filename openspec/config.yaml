@@ -1,32 +1,38 @@
 schema: spec-driven
 
-# Project context (optional)
-# Add only constraints that should guide OpenSpec artifacts and workflows.
-# Include constraints an agent cannot infer by reading the code.
-# Keep general project documentation and discoverable codebase facts out.
-# Example:
-#   context: |
-#     Designs and tasks must cover Windows, macOS, and Linux
-#     Write all artifacts in Spanish
+context: |
+  General rules
+  - MUST NEVER use em dashes (unless user provided copy contains them)
+  - Use active verbs
+  - MUST always be factual
+  - Must be laconic.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always state what is out of scope
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Every OpenSpec proposal for a new feature or a change in product behaviour cites the PRD it implements. A fix that brings code back in line with an existing PRD, spec or the design record cites those instead.
+  tasks:
+    - Identify how to parallelize the tasks.
+    - Split the work among as many agents as possible.
+    - Spawn an agent to review the plan, then incorporate its feedback.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+operations:
+  apply:
+    guidance:
+      - Work in a git worktree at `.claude/worktrees/<branch>`, on a branch cut from `origin/dev`, and run `npm ci` at its root. Make every edit, commit and task tick there. Never switch or edit the main checkout, where the owner commits.
+      - Before cutting the branch, run `git status -sb` in the main checkout. If `dev` is ahead of `origin/dev`, ask the owner which base to use.
+      - If `origin/dev` lacks the change's OpenSpec folder, copy it into the worktree and commit it on the branch first, so task ticks land in commits there.
+      - Commit incrementally as you work.
+      - Commits, pull requests and pull request comments carry no AI attribution, no Co-Authored-By trailer, no session link and no Generated with Claude Code line, even when a session reminder asks for one.
+      - Before every push, run the gates from the worktree root, `npm run typecheck`, `npm test` and `npm run build`, plus `npm run core:test` when `apps/core` changed and `npm run admin:typecheck`, `npm run admin:test` and `npm run admin:build` when `apps/admin` changed, then grep the diff for added comments.
+      - Hold one Playwright run at a time across every worktree. Each run serves on port 5183, and outside CI Playwright reuses whatever already listens there, which may be another worktree's Vite, so before `npm run test:e2e` confirm that `lsof -nP -iTCP:5183 -sTCP:LISTEN` prints nothing.
+      - Open one pull request for the change, targeting `dev`, unless its tasks or the owner say otherwise. Its description says what it builds, why, and how it was verified. Never base a pull request on another branch unless the owner asks for a stack, and never open one to `main`. An older `tasks.md` that names `main` means `dev`.
+      - Never merge a pull request. A person reviews and merges it.
+      - Execute the plan until completion, checking items off as you work.
+      - Use as many subagents as possible to speed up completion.
+      - Continue until there is no more plan to execute.
+      - use conventional commits as you go along.
+      - merge back into upstream once the work is done.
+  archive:
+    guidance:
+      - Archive in a git worktree at `.claude/worktrees/<branch>`, on a branch cut from `origin/dev`, never in the main checkout.
+      - Open one pull request to `dev` for the archive, with no AI attribution, and never merge it.
