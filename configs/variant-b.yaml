@@ -1,0 +1,23 @@
+gateway:
+  port: 9090
+  global_timeout: "750ms"
+  routes:                           # nested under gateway
+    - path: "/v2/"                  # trailing slash is removed
+      methods: ["get", "delete"]    # lowercase methods
+      strip_prefix: true
+      timeout: "2s"                 # route-level timeout
+      upstream:
+        url: "http://localhost:3002/base"
+      rate_limit: { requests: 2, window: "1s", per: global }
+    - path: "/v2/admin"             # longer prefix than /v2
+      upstream:
+        targets:
+          - { url: "http://localhost:3003" }
+          - { url: "http://localhost:3004" }
+        retry: { attempts: 2, backoff: fixed, initial_delay: "100ms", on: [500] }
+      auth: { type: api_key, header: "Authorization", keys: ["k1"] }
+      response_transform:
+        body:
+          envelope:
+            result: { payload: "$body", ok: true }
+            route: "$route_path"
