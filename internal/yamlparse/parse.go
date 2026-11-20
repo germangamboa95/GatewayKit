@@ -296,17 +296,17 @@ func checkPlainStart(ln *srcLine, off int, flow bool) error {
 	case '!':
 		return errAt(ln, off, "tags are not supported")
 	case '|', '>':
-		return errAt(ln, off, "block scalars (%q) are not supported", string(c))
+		return errAt(ln, off, "block scalars ('%c') are not supported", c)
 	case '%':
 		return errAt(ln, off, "directives are not supported")
 	case '@', '`':
-		return errAt(ln, off, "reserved character %q cannot start a plain value", string(c))
+		return errAt(ln, off, "reserved character '%c' cannot start a plain value", c)
 	case '?':
 		if isWS(next) || (flow && strings.IndexByte(",[]{}", next) >= 0) {
 			return errAt(ln, off, "complex keys ('?') are not supported")
 		}
 	case ',', ']', '}', '#':
-		return errAt(ln, off, "unexpected %q", string(c))
+		return errAt(ln, off, "unexpected '%c'", c)
 	case ':':
 		if isWS(next) || (flow && strings.IndexByte(",[]{}", next) >= 0) {
 			return errAt(ln, off, "unexpected ':'")
