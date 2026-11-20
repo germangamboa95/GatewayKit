@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -334,5 +335,34 @@ func TestMiddlewareNames(t *testing.T) {
 		if got := strings.Join(middlewareNames(r), ","); got != want[r.Path] {
 			t.Errorf("%s: %q, want %q", r.Path, got, want[r.Path])
 		}
+	}
+}
+
+func TestServeShutdown(t *testing.T) {
+	cfg := loadText(t, "gateway:\n  port: 8080\nroutes: []\n")
+	deps := contract.Deps{Logger: discardLogger()}.WithDefaults()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- serve(ctx, ln, buildHandler(cfg, deps), cfg, deps) }()
+	resp, err := http.Get("http://" + ln.Addr().String() + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("/health = %d", resp.StatusCode)
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit = %d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not return after cancel")
 	}
 }
