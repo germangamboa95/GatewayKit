@@ -1,0 +1,15 @@
+# Binaries
+/gatewaykit
+*.exe
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Env / IDE
+.env
+.idea/
+.vscode/
+.DS_Store
