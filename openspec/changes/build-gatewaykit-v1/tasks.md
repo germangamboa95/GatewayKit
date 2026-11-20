@@ -106,9 +106,9 @@ When each piece of work starts:
 
 ## 11. M1 core: wire and boot (F1)
 
-- [ ] 11.1 [orchestrator] Merge groups 3 to 7 as each passes; verify the design D13 unit gates pass on the integration branch after each merge
-- [ ] 11.2 [http] F1: write `main()` to load, normalize, wire each route's chain from the design D2 constructors with the 6.4 terminal handler, serve, and log each route's middleware; verify `httptest` tests on the assembled handler for the sample routes, and that `routes: []` serves `/health` with 200 and everything else with 404
-- [ ] 11.3 [config] Write the root-module exit-code test per design D11; verify `go test .`:
+- [x] 11.1 [orchestrator] Merge groups 3 to 7 as each passes; verify the design D13 unit gates pass on the integration branch after each merge
+- [x] 11.2 [http] F1: write `main()` to load, normalize, wire each route's chain from the design D2 constructors with the 6.4 terminal handler, serve, and log each route's middleware; verify `httptest` tests on the assembled handler for the sample routes, and that `routes: []` serves `/health` with 200 and everything else with 404
+- [x] 11.3 [config] Write the root-module exit-code test per design D11; verify `go test .`:
   - `testdata/broken.yaml` (three errors) exits 1 and prints each error with `broken.yaml:<line>:<col>`.
   - A missing config exits 1 and lists all four locations.
 - [ ] 11.4 [harness] Write e2e `tests/core_test.go`; verify `scripts/e2e.sh` passes on all four configs. It covers:
@@ -135,7 +135,7 @@ When each piece of work starts:
 
 ## 13. M3 resilience (F5, F7)
 
-- [ ] 13.1 [proxy] F5: fill `internal/upstream` per design D6 and swap it in for the terminal handler in `main.go`; verify unit tests with a fake clock and client:
+- [x] 13.1 [proxy] F5: fill `internal/upstream` per design D6 and swap it in for the terminal handler in `main.go`; verify unit tests with a fake clock and client:
   - Retry waits; a re-pick on each attempt; the last response returned.
   - The breaker checked before each attempt.
   - Half-open with all targets unhealthy releases the trial.
