@@ -39,7 +39,7 @@ This starts the gateway on port 8080 and six mocks on 3001 to 3006 in the gatewa
 CONFIG=variant-b.yaml docker compose up --build
 ```
 
-Variant B listens on port 9090; the others listen on 8080.
+Variant B listens on port 9090; the others listen on 8080. Stop the stack with `docker compose --profile test down`.
 
 | Service | Port |
 | --- | --- |
@@ -87,8 +87,10 @@ Only one stack can run at a time, because every stack publishes the same host po
 With a stack already up, run the suite directly:
 
 ```sh
-docker compose run --rm tests
+docker compose run --rm --no-deps tests
 ```
+
+`--no-deps` keeps Compose from recreating the gateway, which would drop the mocks out of its network namespace.
 
 For variant B, set `CONFIG=variant-b.yaml GATEWAY_PORT=9090` on that command.
 
@@ -98,7 +100,7 @@ Full CI:
 scripts/ci.sh
 ```
 
-`scripts/ci.sh` runs, in order: `gofmt`, the standard-library check (no `require` line, and `go list -m all` prints only the module itself), `go vet` and `go test` in all three modules, then `scripts/e2e.sh` for each of the four configs. It exits non-zero if any step fails.
+`scripts/ci.sh` runs, in order: `gofmt`, the standard-library check (no `require` line, and `go list -m all` prints only the module itself), `go vet` and `go test` in all three modules, then `scripts/e2e.sh` for each of the four configs, then a host-side dead-target check on `variant-c.yaml`. The check stops `products-b` with `docker compose stop`, expects a 502 `bad_gateway` on `/c/health`, then all `/c/health` traffic on `products-a` within 3s, then both targets serving again after `docker compose start products-b`. `scripts/ci.sh` holds the Compose lock for the whole run. It exits non-zero if any step fails.
 
 `.github/workflows/ci.yml` runs `scripts/ci.sh` on every push and pull request, on `ubuntu-latest` with Go 1.27.4.
 
