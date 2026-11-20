@@ -226,3 +226,17 @@ func TestConcurrent(t *testing.T) {
 		t.Fatalf("allowed %d, want 1000", total)
 	}
 }
+
+func TestIdleBucketDeletedAtTwiceWindow(t *testing.T) {
+	l := New(cfg(5, time.Minute, "", ""))
+	l.Allow("a", at(1000))
+	l.Allow("b", at(1090))
+	l.Allow("c", at(1130))
+	if l.Len() != 2 {
+		t.Fatalf("len %d, want 2 after a idled 130s", l.Len())
+	}
+	l.Allow("c", at(1210))
+	if l.Len() != 1 {
+		t.Fatalf("len %d, want 1 after b idled 120s", l.Len())
+	}
+}
