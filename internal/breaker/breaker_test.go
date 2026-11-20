@@ -1,6 +1,8 @@
 package breaker
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -193,5 +195,25 @@ func TestCeilSeconds(t *testing.T) {
 		if got := ceilSeconds(d); got != want {
 			t.Errorf("ceilSeconds(%v) = %d want %d", d, got, want)
 		}
+	}
+}
+
+func TestHalfOpenAdmitsExactlyOneConcurrently(t *testing.T) {
+	b := newB(1, time.Minute, time.Second)
+	trip(t, b, 1, at(0))
+	var passed atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ok, _ := b.TryPass(at(2 * time.Second)); ok {
+				passed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if passed.Load() != 1 {
+		t.Fatalf("%d trials admitted", passed.Load())
 	}
 }

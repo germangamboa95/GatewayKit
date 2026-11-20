@@ -1,6 +1,8 @@
 package balance
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,5 +158,31 @@ func TestPoolThreshold(t *testing.T) {
 	p.MarkProbe(a, true)
 	if !p.Healthy(a) {
 		t.Fatal("not recovered")
+	}
+}
+
+func TestConcurrentPicksKeepRatio(t *testing.T) {
+	a, b := target(t, "http://a", 3), target(t, "http://b", 1)
+	p := NewPool(route([]*contract.Target{a, b}, false))
+	bal := New(contract.BalanceWeightedRoundRobin)
+	var na, nb atomic.Int64
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 100; i++ {
+				tg, _ := bal.Pick(p)
+				if tg == a {
+					na.Add(1)
+				} else {
+					nb.Add(1)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if na.Load() != 600 || nb.Load() != 200 {
+		t.Fatalf("a=%d b=%d", na.Load(), nb.Load())
 	}
 }
