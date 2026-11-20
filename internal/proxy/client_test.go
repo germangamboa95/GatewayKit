@@ -236,3 +236,23 @@ func TestHandlerGatewayErrorNotFromUpstream(t *testing.T) {
 		t.Fatalf("res %+v %s", res, res.Body)
 	}
 }
+
+func TestBuildRequestBodyFallbackAndTLS(t *testing.T) {
+	r := httptest.NewRequest("POST", "https://gw.example/a?z=9", strings.NewReader("raw"))
+	r.RemoteAddr = "192.0.2.1:1234"
+	ctx := &contract.RequestContext{Req: r, Route: &contract.Route{Path: "/a"}}
+	out := BuildRequest(ctx)
+	if string(out.Body) != "raw" || string(ctx.Body) != "raw" {
+		t.Fatalf("body %q ctx %q", out.Body, ctx.Body)
+	}
+	if out.Path != "/a?z=9" || out.Method != "POST" {
+		t.Fatalf("out %+v", out)
+	}
+	h := out.Header
+	if h.Get("X-Forwarded-For") != "192.0.2.1" || h.Get("X-Forwarded-Proto") != "https" || h.Get("X-Forwarded-Host") != "gw.example" {
+		t.Fatalf("headers %v", h)
+	}
+	if ctx.Req.Header.Get("X-Forwarded-For") != "" {
+		t.Fatal("client request headers mutated")
+	}
+}
