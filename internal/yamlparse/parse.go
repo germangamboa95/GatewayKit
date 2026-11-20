@@ -95,6 +95,9 @@ func scanLines(src string) ([]srcLine, error) {
 		if rest[0] == '\t' {
 			return nil, errAt(&ln, n, "tab character in indentation")
 		}
+		if n == 0 && t[0] == '%' {
+			return nil, errAt(&ln, 0, "directives are not supported")
+		}
 		if n == 0 && isMarker(t, "---") {
 			if started || len(out) > 0 || ended {
 				return nil, errAt(&ln, 0, "multiple documents are not supported")
