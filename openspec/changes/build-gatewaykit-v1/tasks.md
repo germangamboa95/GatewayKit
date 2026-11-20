@@ -111,7 +111,7 @@ When each piece of work starts:
 - [x] 11.3 [config] Write the root-module exit-code test per design D11; verify `go test .`:
   - `testdata/broken.yaml` (three errors) exits 1 and prints each error with `broken.yaml:<line>:<col>`.
   - A missing config exits 1 and lists all four locations.
-- [ ] 11.4 [harness] Write e2e `tests/core_test.go`; verify `scripts/e2e.sh` passes on all four configs. It covers:
+- [x] 11.4 [harness] Write e2e `tests/core_test.go`; verify `scripts/e2e.sh` passes on all four configs. It covers:
   - `/health`, and `HEAD /health` being routed.
   - Proxy pass-through of status, headers and body.
   - strip_prefix and base path.
@@ -119,19 +119,19 @@ When each piece of work starts:
   - Variant A default proxying.
   - Variant B: port 9090, and the route timeout beating the global one.
   - Variant C: 504 on `/c/unlimited` with a 2500ms mock delay.
-- [ ] 11.5 [orchestrator] Merge 11.2 to 11.4 and write `gates/M1.md` (e2e report, curl transcript of health, proxy, 404 and 405, broken-config output); verify `scripts/ci.sh` passes
+- [x] 11.5 [orchestrator] Merge 11.2 to 11.4 and write `gates/M1.md` (e2e report, curl transcript of health, proxy, 404 and 405, broken-config output); verify `scripts/ci.sh` passes
 
 ## 12. M2 global features (F2, F3)
 
 - [x] 12.1 [policy] F2: fill `internal/middleware/ratelimit` (client IP from the socket address, 429 body and headers, `X-RateLimit-*` on allowed responses, none when disabled); verify unit tests, including `X-Forwarded-For` being ignored
 - [x] 12.2 [policy] F3: fill `internal/middleware/auth`; verify unit tests for both 401 bodies, the case-insensitive header, and the key forwarded unchanged
-- [ ] 12.3 [harness] Write e2e `tests/ratelimit_test.go` and `tests/auth_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 12.1 and 12.2 merge. They cover:
+- [x] 12.3 [harness] Write e2e `tests/ratelimit_test.go` and `tests/auth_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 12.1 and 12.2 merge. They cover:
   - **Sample limits:** `/api/users` 30 per 60s sliding; `/api/orders` 10 per 10s fixed, using the window helper; 100 per 60s inherited.
   - **Counting:** separate buckets per route; 404, 405 and `/health` not counted; a spoofed `X-Forwarded-For` ignored.
   - **Variant B:** the global bucket shared by two source IPs.
   - **Variant C:** `/c/limited` returns 429 on the sixth request; `/c/unlimited` carries no limit headers.
   - **Auth:** missing, wrong and valid keys; failed auth uses quota; variant B's `Authorization` header.
-- [ ] 12.4 [orchestrator] Merge groups 8 and 12 and write `gates/M2.md` with 429 and 401 transcripts; verify `scripts/ci.sh` passes
+- [x] 12.4 [orchestrator] Merge groups 8 and 12 and write `gates/M2.md` with 429 and 401 transcripts; verify `scripts/ci.sh` passes
 
 ## 13. M3 resilience (F5, F7)
 
