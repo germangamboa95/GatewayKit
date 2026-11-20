@@ -1,0 +1,7 @@
+map(2) @1:1
+  "gateway": map(0) @1:10
+  "routes": seq(1) @3:3
+    - [0] map(2) @3:5
+      "path": "/" quoted @3:11
+      "upstream": map(1) @5:7
+        "url": "http://localhost:3001" quoted @5:12
