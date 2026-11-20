@@ -39,6 +39,8 @@ type Breaker struct {
 	failures []time.Time
 	openedAt time.Time
 	trial    bool
+	seq      uint64
+	trialID  uint64
 }
 
 // New returns the breaker for cfg, or a pass-through when cfg is nil.
@@ -61,31 +63,53 @@ func NewBreaker(cfg *contract.CircuitBreakerConfig) *Breaker {
 // TryPass reports whether a request may reach the upstream. On rejection
 // retryAfter is the whole seconds to wait, at least 1.
 func (b *Breaker) TryPass(now time.Time) (bool, int) {
+	ok, ra, _ := b.Admit(now)
+	return ok, ra
+}
+
+// Admit is TryPass that also returns a ticket for Settle and Abandon. Only
+// the half-open trial's ticket can decide or release the trial.
+func (b *Breaker) Admit(now time.Time) (bool, int, uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.seq++
 	switch b.state {
 	case Open:
 		elapsed := now.Sub(b.openedAt)
 		if elapsed < b.cooldown {
-			return false, ceilSeconds(b.cooldown - elapsed)
+			return false, ceilSeconds(b.cooldown - elapsed), 0
 		}
 		b.state = HalfOpen
 		b.trial = true
-		return true, 0
+		b.trialID = b.seq
+		return true, 0, b.seq
 	case HalfOpen:
 		if b.trial {
-			return false, 1
+			return false, 1, 0
 		}
 		b.trial = true
-		return true, 0
+		b.trialID = b.seq
+		return true, 0, b.seq
 	}
-	return true, 0
+	return true, 0, b.seq
 }
 
 // Record applies one attempt outcome; ok is false for status 500 and above.
+// In half-open it is taken as the trial's outcome.
 func (b *Breaker) Record(ok bool, now time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.record(b.trialID, ok, now)
+}
+
+// Settle is Record for the request holding ticket.
+func (b *Breaker) Settle(ticket uint64, ok bool, now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.record(ticket, ok, now)
+}
+
+func (b *Breaker) record(ticket uint64, ok bool, now time.Time) {
 	switch b.state {
 	case Closed:
 		if ok {
@@ -97,7 +121,7 @@ func (b *Breaker) Record(ok bool, now time.Time) {
 			b.open(now)
 		}
 	case HalfOpen:
-		if !b.trial {
+		if !b.trial || ticket != b.trialID {
 			return
 		}
 		b.trial = false
@@ -116,6 +140,15 @@ func (b *Breaker) Release() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.state == HalfOpen {
+		b.trial = false
+	}
+}
+
+// Abandon is Release for the request holding ticket.
+func (b *Breaker) Abandon(ticket uint64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.state == HalfOpen && ticket == b.trialID {
 		b.trial = false
 	}
 }

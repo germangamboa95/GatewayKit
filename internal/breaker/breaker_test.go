@@ -217,3 +217,37 @@ func TestHalfOpenAdmitsExactlyOneConcurrently(t *testing.T) {
 		t.Fatalf("%d trials admitted", passed.Load())
 	}
 }
+
+func TestLateResultDoesNotDecideTrial(t *testing.T) {
+	b := newB(1, time.Minute, time.Second)
+	okA, _, a := b.Admit(at(0))
+	if !okA {
+		t.Fatal("A rejected")
+	}
+	b.Record(false, at(0))
+	okC, _, c := b.Admit(at(time.Second))
+	if !okC || b.State() != HalfOpen {
+		t.Fatalf("trial not admitted, state %s", b.State())
+	}
+	b.Settle(a, true, at(1500*time.Millisecond))
+	if b.State() != HalfOpen {
+		t.Fatalf("late result changed state to %s", b.State())
+	}
+	mustReject(t, b, at(1500*time.Millisecond), 1)
+	b.Abandon(a)
+	mustReject(t, b, at(1600*time.Millisecond), 1)
+	b.Settle(c, true, at(2*time.Second))
+	if b.State() != Closed {
+		t.Fatalf("trial result ignored, state %s", b.State())
+	}
+}
+
+func TestAbandonTrialAdmitsNext(t *testing.T) {
+	b := newB(1, time.Minute, time.Second)
+	b.Record(false, at(0))
+	_, _, c := b.Admit(at(time.Second))
+	b.Abandon(c)
+	if ok, _, _ := b.Admit(at(time.Second)); !ok {
+		t.Fatal("next request not admitted as trial")
+	}
+}
