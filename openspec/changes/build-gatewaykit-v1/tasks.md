@@ -142,21 +142,21 @@ When each piece of work starts:
   - A client cancel is not recorded.
   - `FromUpstream` is false on gateway errors.
 - [x] 13.2 [resilience] F7: fill `internal/healthcheck` (startup round, interval, probe timeout `min(interval, timeout)`, threshold, recovery, no effect on breaker or limits); verify fake-clock and `httptest` unit tests
-- [ ] 13.3 [mock] Write e2e `tests/retry_test.go`, `breaker_test.go`, `health_test.go` and `balance_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 13.1 and 13.2 merge. They cover:
+- [x] 13.3 [mock] Write e2e `tests/retry_test.go`, `breaker_test.go`, `health_test.go` and `balance_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 13.1 and 13.2 merge. They cover:
   - **Retry, sample:** waits of 1s and 2s via `X-Mock-Fail-Times`.
   - **Retry, variant C:** `/c/retry` waits 1s, 2s and 4s.
   - **Retry, variant B:** `POST :3003/__mock/default {"status":500}`, send until a request starts on 3003, then assert it was retried on 3004 after at least 100ms and returned 200.
   - **Breaker, variant C:** trips at 3, returns the exact 503 body with `Retry-After`, runs the half-open trial, recovers, and restores state.
   - **Health, variant C:** a target goes unhealthy via `/__mock/health`, then recovers.
   - **Balance:** 8 sample `/api/products` requests give 6 on `products-a` and 2 on `products-b`, counted from mock logs.
-- [ ] 13.4 [harness] Add the host-side dead-target check to `scripts/ci.sh` per design D11; verify 502s, then all `/c/health` traffic on `products-a` within 3s, then recovery after `docker compose start products-b`
+- [x] 13.4 [harness] Add the host-side dead-target check to `scripts/ci.sh` per design D11; verify 502s, then all `/c/health` traffic on `products-a` within 3s, then recovery after `docker compose start products-b`
 - [ ] 13.5 [orchestrator] Merge groups 9 and 13 and write `gates/M3.md` (retry timings, breaker states, 3:1 counts, health transitions); verify `scripts/ci.sh` passes
 
 ## 14. M4 transforms (F4, F6)
 
 - [x] 14.1 [transform] F4: fill `internal/middleware/reqtransform` (400 `invalid_json_body`, trailing data rejected, `Content-Length` recalculated); verify unit tests
 - [x] 14.2 [transform] F6: fill `internal/middleware/resptransform` (acts only when `FromUpstream` is true, `Accept-Encoding: identity`, JSON `Content-Type` and `Content-Length`); verify unit tests, including an upstream 503 followed by a timeout giving the plain 504 body
-- [ ] 14.3 [yaml] Write e2e `tests/transform_request_test.go` and `tests/transform_response_test.go`; verify `scripts/e2e.sh` passes on the sample and variant B once 14.1 and 14.2 merge. They cover:
+- [x] 14.3 [yaml] Write e2e `tests/transform_request_test.go` and `tests/transform_response_test.go`; verify `scripts/e2e.sh` passes on the sample and variant B once 14.1 and 14.2 merge. They cover:
   - **Requests:** sample `/api/legacy`, comparing the client request with what the mock received.
   - **Responses:** the envelope and header changes; `Server` and `X-Powered-By` removed; an upstream 5xx wrapped with its status kept; `X-Mock-Body` giving a raw-string `$body`; gateway errors not wrapped.
   - **Variant B:** the nested envelope, byte for byte.
@@ -164,7 +164,7 @@ When each piece of work starts:
 
 ## 15. M5 finish (G2, G3)
 
-- [ ] 15.1 [harness] G2: write `.github/workflows/ci.yml` to run `scripts/ci.sh`; verify `scripts/ci.sh` exits 0 locally across all four configs
+- [x] 15.1 [harness] G2: write `.github/workflows/ci.yml` to run `scripts/ci.sh`; verify `scripts/ci.sh` exits 0 locally across all four configs
 - [ ] 15.2 [orchestrator] G3: write `README.md` (how to run, configs, config spec §14 decisions, design D12, `rate_limit: false`); verify every command in it runs as written
 - [ ] 15.3 [orchestrator] Run every gate, write `gates/M5.md`, and open the pull request per the apply guidance; verify CI passes on it
 
