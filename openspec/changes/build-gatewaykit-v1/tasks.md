@@ -30,20 +30,20 @@ When each piece of work starts:
 
 - [x] 1.1 Create the integration branch `feat/gatewaykit-v1` in a worktree per the apply guidance; verify `git worktree list` shows it
 - [x] 1.2 W0.2: write `internal/contract` with the base_spec.md Wave 0 block and the seven fixes in design D2; implement `ErrorResponse` and `Classify`, stub the rest; verify `go vet ./...` and unit tests for every config spec §12 error body and each `Classify` case in design D7
-- [ ] 1.3 W0.2: write `internal/yamlparse` (`Node`, `Kind`, stub `ParseYAML`) and pass-through `New` stubs for `internal/middleware/ratelimit`, `.../auth`, `.../reqtransform`, `.../resptransform`, `internal/upstream` and `internal/healthcheck`; verify `go build ./...`
+- [x] 1.3 W0.2: write `internal/yamlparse` (`Node`, `Kind`, stub `ParseYAML`) and pass-through `New` stubs for `internal/middleware/ratelimit`, `.../auth`, `.../reqtransform`, `.../resptransform`, `internal/upstream` and `internal/healthcheck`; verify `go build ./...`
 - [x] 1.4 W0.2: write `internal/fixtures` with one normalized `Route` per sample route; verify a unit test checks each fixture against design D10 (orders timeout 5s and retry 3/exponential/1s, products weights 3:1 with health check, legacy transforms, internal auth and breaker, inherited global limits, `MethodList` order)
 - [x] 1.5 Write `configs/gateway.yaml` (design D10) and `configs/variant-a.yaml`, `variant-b.yaml` and `variant-c.yaml` (design D11); verify `gateway.yaml` and `variant-c.yaml` match their design blocks byte for byte, and A and B match config spec §13 except for the `400N` to `300(N+1)` port remap
-- [ ] 1.6 Merge group 1 and dispatch the Wave 1 library agents; verify `go build ./...` and `go vet ./...` pass on the integration branch
+- [x] 1.6 Merge group 1 and dispatch the Wave 1 library agents; verify `go build ./...` and `go vet ./...` pass on the integration branch
 
 ## 2. Wave 0b: build skeleton (agent `harness`, parallel with group 1)
 
-- [ ] 2.1 W0.1: write a root `Dockerfile` (`golang:1.27.4`, `CGO_ENABLED=0`, static binary into `scratch`) and turn `main.go` into a stub that listens on 8080; add `mock-upstream/` and `tests/` modules with zero-require `go.mod` files, stub mains (the mock listens on `$PORT`) and Dockerfiles pinned to `golang:1.27.4`; verify `go build ./...` in all three modules and `docker build` of all three images
-- [ ] 2.2 W0.1: write `docker-compose.yml` per base_spec.md "Docker Compose", with `profiles: ["test"]`, `CONFIG`, `GATEWAY_URL=http://localhost:${GATEWAY_PORT:-8080}`, and ports 8080, 9090 and 3001 to 3006; verify `docker compose up -d` lists 7 running containers and `curl localhost:8080/` answers
-- [ ] 2.3 W0.1: write `scripts/e2e.sh` and `scripts/ci.sh` per design D11 and D13; verify:
+- [x] 2.1 W0.1: write a root `Dockerfile` (`golang:1.27.4`, `CGO_ENABLED=0`, static binary into `scratch`) and turn `main.go` into a stub that listens on 8080; add `mock-upstream/` and `tests/` modules with zero-require `go.mod` files, stub mains (the mock listens on `$PORT`) and Dockerfiles pinned to `golang:1.27.4`; verify `go build ./...` in all three modules and `docker build` of all three images
+- [x] 2.2 W0.1: write `docker-compose.yml` per base_spec.md "Docker Compose", with `profiles: ["test"]`, `CONFIG`, `GATEWAY_URL=http://localhost:${GATEWAY_PORT:-8080}`, and ports 8080, 9090 and 3001 to 3006; verify `docker compose up -d` lists 7 running containers and `curl localhost:8080/` answers
+- [x] 2.3 W0.1: write `scripts/e2e.sh` and `scripts/ci.sh` per design D11 and D13; verify:
   - `scripts/ci.sh` exits 0 with the stub tests.
   - A temp copy of the repo with an added `require` line fails the standard-library check, naming the module (run with `GOPROXY=off`).
   - A second `scripts/e2e.sh` started while one runs exits on the lock.
-- [ ] 2.4 [orchestrator] Merge group 2 and write `gates/M0.md` (contract files and the D2 fixes, fixtures, standard-library check output, `docker compose ps`); verify `scripts/ci.sh` passes on the integration branch
+- [x] 2.4 [orchestrator] Merge group 2 and write `gates/M0.md` (contract files and the D2 fixes, fixtures, standard-library check output, `docker compose ps`); verify `scripts/ci.sh` passes on the integration branch
 
 ## 3. YAML subset parser (A0, agent `yaml`)
 
@@ -80,7 +80,7 @@ When each piece of work starts:
 ## 7. Mock and e2e harness (D1 to D3, agents `mock` and `harness`)
 
 - [x] 7.1 [mock] D1: build the mock per the mock-upstream spec; verify unit tests in `mock-upstream/`, including `HEALTH_PATH` staying out of the log and ignoring the default override
-- [ ] 7.2 [mock] D2: point Compose at the real mock image; verify `curl localhost:3005/__mock/requests` returns `[]` and a proxied response from 3005 carries `Server: mock`
+- [x] 7.2 [mock] D2: point Compose at the real mock image; verify `curl localhost:3005/__mock/requests` returns `[]` and a proxied response from 3005 carries `Server: mock`
 - [ ] 7.3 [harness] D3: build the e2e harness in `tests/` per design D11 (`GATEWAY_URL`, `CONFIG`, per-config scenario selection, mock reset, a client per test with its own `127.0.0.N` source IP, window-boundary helper, state-restore helpers, request-log and timing helpers); verify `go vet ./...` and a smoke test against `PORT=3001 go -C mock-upstream run .`
 
 ## 8. Rate limiter and auth (E1, E8, agent `policy`)
