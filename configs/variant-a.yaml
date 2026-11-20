@@ -1,0 +1,5 @@
+gateway: {}
+routes:
+  - path: "/"
+    upstream:
+      url: "http://localhost:3001"

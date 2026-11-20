@@ -1,0 +1,49 @@
+# variant-c.yaml: fast resilience timings for e2e
+gateway:
+  port: 8080
+  global_timeout: "2s"
+  global_rate_limit:
+    requests: 5
+    window: "60s"
+    strategy: sliding_window
+    per: ip
+
+routes:
+  - path: "/c/retry"
+    upstream:
+      url: "http://localhost:3002"
+      retry:
+        attempts: 4
+        backoff: exponential
+        initial_delay: "1s"
+        on: [503]
+    rate_limit: { requests: 1000 }
+
+  - path: "/c/breaker"
+    upstream:
+      url: "http://localhost:3006"
+    circuit_breaker:
+      threshold: 3
+      window: "10s"
+      cooldown: "2s"
+    rate_limit: { requests: 1000 }
+
+  - path: "/c/health"
+    upstream:
+      targets:
+        - url: "http://localhost:3003"
+        - url: "http://localhost:3004"
+      health_check:
+        path: "/healthz"
+        interval: "1s"
+        unhealthy_threshold: 2
+    rate_limit: { requests: 1000 }
+
+  - path: "/c/limited"
+    upstream:
+      url: "http://localhost:3001"
+
+  - path: "/c/unlimited"
+    upstream:
+      url: "http://localhost:3001"
+    rate_limit: false
