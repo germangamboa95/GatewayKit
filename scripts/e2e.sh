@@ -79,9 +79,9 @@ fi
 
 set +e
 if [ -n "${E2E_RUN:-}" ]; then
-	docker compose run --build --rm tests go test -v -count=1 -run "$E2E_RUN" ./...
+	docker compose run --build --rm --no-deps tests go test -v -count=1 -run "$E2E_RUN" ./...
 else
-	docker compose run --build --rm tests
+	docker compose run --build --rm --no-deps tests
 fi
 rc=$?
 set -e
