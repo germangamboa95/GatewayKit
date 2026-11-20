@@ -72,16 +72,16 @@ When each piece of work starts:
 
 ## 6. Proxy core (C1 to C3, agent `proxy`)
 
-- [ ] 6.1 C1: rewrite paths (strip_prefix, empty result as `/`, base path join, query kept); verify the four config spec §4 table rows plus query and double-slash cases
-- [ ] 6.2 C2: build the upstream client per design D7 (shared transport, buffered body, hop-by-hop removal, `Host`, `X-Forwarded-For`, `-Proto`, `-Host`, no redirects, `Accept-Encoding` pass-through or `identity`); verify `httptest` tests assert the request the upstream received and that upstream status, headers and body come back unchanged
-- [ ] 6.3 C3: apply the per-attempt timeout through the full body; verify tests with a slow-body fake (504), a closed-socket fake (502) and a canceled client context (aborted, not classified)
-- [ ] 6.4 Build the single-attempt terminal handler (first target, one attempt, `FromUpstream` set); verify an `httptest` round trip
+- [x] 6.1 C1: rewrite paths (strip_prefix, empty result as `/`, base path join, query kept); verify the four config spec §4 table rows plus query and double-slash cases
+- [x] 6.2 C2: build the upstream client per design D7 (shared transport, buffered body, hop-by-hop removal, `Host`, `X-Forwarded-For`, `-Proto`, `-Host`, no redirects, `Accept-Encoding` pass-through or `identity`); verify `httptest` tests assert the request the upstream received and that upstream status, headers and body come back unchanged
+- [x] 6.3 C3: apply the per-attempt timeout through the full body; verify tests with a slow-body fake (504), a closed-socket fake (502) and a canceled client context (aborted, not classified)
+- [x] 6.4 Build the single-attempt terminal handler (first target, one attempt, `FromUpstream` set); verify an `httptest` round trip
 
 ## 7. Mock and e2e harness (D1 to D3, agents `mock` and `harness`)
 
 - [x] 7.1 [mock] D1: build the mock per the mock-upstream spec; verify unit tests in `mock-upstream/`, including `HEALTH_PATH` staying out of the log and ignoring the default override
 - [x] 7.2 [mock] D2: point Compose at the real mock image; verify `curl localhost:3005/__mock/requests` returns `[]` and a proxied response from 3005 carries `Server: mock`
-- [ ] 7.3 [harness] D3: build the e2e harness in `tests/` per design D11 (`GATEWAY_URL`, `CONFIG`, per-config scenario selection, mock reset, a client per test with its own `127.0.0.N` source IP, window-boundary helper, state-restore helpers, request-log and timing helpers); verify `go vet ./...` and a smoke test against `PORT=3001 go -C mock-upstream run .`
+- [x] 7.3 [harness] D3: build the e2e harness in `tests/` per design D11 (`GATEWAY_URL`, `CONFIG`, per-config scenario selection, mock reset, a client per test with its own `127.0.0.N` source IP, window-boundary helper, state-restore helpers, request-log and timing helpers); verify `go vet ./...` and a smoke test against `PORT=3001 go -C mock-upstream run .`
 
 ## 8. Rate limiter and auth (E1, E8, agent `policy`)
 
@@ -100,9 +100,9 @@ When each piece of work starts:
 
 ## 10. Transforms (E5 to E7, agent `transform`)
 
-- [ ] 10.1 E5: resolve variables and transform headers (remove then add, managed headers untouched); verify unit tests per traffic-transforms variable and header scenario
-- [ ] 10.2 E6: build dot-path get and set and the body mapper per design D8 (`UseNumber`, trailing data rejected, ordered output, array indexes, missing keys omitted, `null` copied); verify the config spec §9 in/out example byte for byte
-- [ ] 10.3 E7: build the envelope (`$body` as raw JSON, raw string or `null`, ordered output); verify the sample `/api/legacy` envelope and variant B's exact bytes `{"result":{"payload":[1,2],"ok":true},"route":"/v2/admin"}`
+- [x] 10.1 E5: resolve variables and transform headers (remove then add, managed headers untouched); verify unit tests per traffic-transforms variable and header scenario
+- [x] 10.2 E6: build dot-path get and set and the body mapper per design D8 (`UseNumber`, trailing data rejected, ordered output, array indexes, missing keys omitted, `null` copied); verify the config spec §9 in/out example byte for byte
+- [x] 10.3 E7: build the envelope (`$body` as raw JSON, raw string or `null`, ordered output); verify the sample `/api/legacy` envelope and variant B's exact bytes `{"result":{"payload":[1,2],"ok":true},"route":"/v2/admin"}`
 
 ## 11. M1 core: wire and boot (F1)
 
@@ -154,8 +154,8 @@ When each piece of work starts:
 
 ## 14. M4 transforms (F4, F6)
 
-- [ ] 14.1 [transform] F4: fill `internal/middleware/reqtransform` (400 `invalid_json_body`, trailing data rejected, `Content-Length` recalculated); verify unit tests
-- [ ] 14.2 [transform] F6: fill `internal/middleware/resptransform` (acts only when `FromUpstream` is true, `Accept-Encoding: identity`, JSON `Content-Type` and `Content-Length`); verify unit tests, including an upstream 503 followed by a timeout giving the plain 504 body
+- [x] 14.1 [transform] F4: fill `internal/middleware/reqtransform` (400 `invalid_json_body`, trailing data rejected, `Content-Length` recalculated); verify unit tests
+- [x] 14.2 [transform] F6: fill `internal/middleware/resptransform` (acts only when `FromUpstream` is true, `Accept-Encoding: identity`, JSON `Content-Type` and `Content-Length`); verify unit tests, including an upstream 503 followed by a timeout giving the plain 504 body
 - [ ] 14.3 [yaml] Write e2e `tests/transform_request_test.go` and `tests/transform_response_test.go`; verify `scripts/e2e.sh` passes on the sample and variant B once 14.1 and 14.2 merge. They cover:
   - **Requests:** sample `/api/legacy`, comparing the client request with what the mock received.
   - **Responses:** the envelope and header changes; `Server` and `X-Powered-By` removed; an upstream 5xx wrapped with its status kept; `X-Mock-Body` giving a raw-string `$body`; gateway errors not wrapped.
