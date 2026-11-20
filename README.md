@@ -1,6 +1,6 @@
 # GatewayKit
 
-GatewayKit is an HTTP API gateway written in Go with the standard library only. It reads one YAML config and forwards requests to upstream services. Per route it supports longest-prefix routing, rate limiting, API key auth, request and response transforms, retries, a circuit breaker, and round-robin or weighted round-robin balancing across health-checked targets. `GET /health` returns `{"status":"healthy","uptime_seconds":<int>}`.
+GatewayKit is an HTTP API gateway written in Go with the standard library only. It reads one YAML config, matches each request to a route by longest path prefix, and forwards it to that route's upstream. Per route it supports rate limiting, API key auth, request and response transforms, retries, a circuit breaker, and round-robin or weighted round-robin balancing across health-checked targets. `GET /health` returns `{"status":"healthy","uptime_seconds":<int>}`.
 
 ## Requirements
 
