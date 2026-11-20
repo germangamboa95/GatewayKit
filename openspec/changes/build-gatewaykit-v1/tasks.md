@@ -47,20 +47,20 @@ When each piece of work starts:
 
 ## 3. YAML subset parser (A0, agent `yaml`)
 
-- [ ] 3.1 Build the line scanner: indentation width, tab-in-indent error, comments outside quotes, leading `---` and trailing `...`; verify a unit test per rule
-- [ ] 3.2 Build block mappings and sequences on an indent stack (`-` at parent indent or deeper, mapping items, empty value as null, duplicate key error, keys with dots and dashes); verify table tests compare node trees, including `Line` and `Col`
-- [ ] 3.3 Parse plain, double-quoted (`\"`, `\\`, `\n`, `\t`, `\uXXXX`) and single-quoted (`''`) scalars and set `Quoted`; verify escape table tests
-- [ ] 3.4 Parse single-line flow sequences and mappings, nested; verify tests for `[a, "b", 3]`, `{ k: v }`, nesting, and an error when a flow value spans lines
-- [ ] 3.5 Reject each unsupported construct (anchors, aliases, `<<`, tags, `|`, `>`, multiple documents, `?`, multi-line plain values) with its line number; verify one test per construct asserts the line
-- [ ] 3.6 Parse all four files in `configs/`; verify golden node-tree tests pass
+- [x] 3.1 Build the line scanner: indentation width, tab-in-indent error, comments outside quotes, leading `---` and trailing `...`; verify a unit test per rule
+- [x] 3.2 Build block mappings and sequences on an indent stack (`-` at parent indent or deeper, mapping items, empty value as null, duplicate key error, keys with dots and dashes); verify table tests compare node trees, including `Line` and `Col`
+- [x] 3.3 Parse plain, double-quoted (`\"`, `\\`, `\n`, `\t`, `\uXXXX`) and single-quoted (`''`) scalars and set `Quoted`; verify escape table tests
+- [x] 3.4 Parse single-line flow sequences and mappings, nested; verify tests for `[a, "b", 3]`, `{ k: v }`, nesting, and an error when a flow value spans lines
+- [x] 3.5 Reject each unsupported construct (anchors, aliases, `<<`, tags, `|`, `>`, multiple documents, `?`, multi-line plain values) with its line number; verify one test per construct asserts the line
+- [x] 3.6 Parse all four files in `configs/`; verify golden node-tree tests pass
 
 ## 4. Config loader (A1 to A4, agent `config`)
 
-- [ ] 4.1 A1: parse durations (`^\d+(\.\d+)?(ms|s|m|h)$`, bare integer as seconds, greater than zero unless the field allows `0s`); verify table tests for `"500ms"`, `"1.5m"`, `30`, `"5 s"` rejected, and `"0s"` accepted only for `initial_delay`
-- [ ] 4.2 A2: resolve the config path (CLI argument, `--config`, `GATEWAY_CONFIG`, `./gateway.yaml`) and report every location tried when none exists; verify tests with temp dirs and env vars
-- [ ] 4.3 A2: decode node trees per design D4 (typing rules, unknown-key warnings with location, lenient placement and both-places errors, route `rate_limit: false` per design D5); verify tests on hand-built node trees
-- [ ] 4.4 A3: validate every field and cross-field rule in the config-loading spec, collecting all errors as `file:line:col: field.path: message`; verify one test per rule plus the config-loading spec's multi-error scenario
-- [ ] 4.5 A3: emit the four config spec §11 warnings; verify a test captures each one
+- [x] 4.1 A1: parse durations (`^\d+(\.\d+)?(ms|s|m|h)$`, bare integer as seconds, greater than zero unless the field allows `0s`); verify table tests for `"500ms"`, `"1.5m"`, `30`, `"5 s"` rejected, and `"0s"` accepted only for `initial_delay`
+- [x] 4.2 A2: resolve the config path (CLI argument, `--config`, `GATEWAY_CONFIG`, `./gateway.yaml`) and report every location tried when none exists; verify tests with temp dirs and env vars
+- [x] 4.3 A2: decode node trees per design D4 (typing rules, unknown-key warnings with location, lenient placement and both-places errors, route `rate_limit: false` per design D5); verify tests on hand-built node trees
+- [x] 4.4 A3: validate every field and cross-field rule in the config-loading spec, collecting all errors as `file:line:col: field.path: message`; verify one test per rule plus the config-loading spec's multi-error scenario
+- [x] 4.5 A3: emit the four config spec §11 warnings; verify a test captures each one
 - [ ] 4.6 A4: normalize per config spec §10 (precedence chain, rate-limit merge, targets from `url`, `MethodList`, lowercase header names, compiled variables, mappings and envelopes with scope and conflict errors); verify the sample's hand-built tree normalizes to `internal/fixtures`, and config A gets every default
 - [ ] 4.7 Wire `Load(path)` end to end once group 3 merges; verify the sample loads with zero errors and zero warnings, all four `configs/` files load, and `balance: random` fails with its location
 
@@ -90,13 +90,13 @@ When each piece of work starts:
 
 ## 9. Balancer, breaker, retry (E2 to E4, agent `resilience`)
 
-- [ ] 9.1 E2: build round robin and smooth weighted round robin over the healthy subset, plus target pool state; verify:
+- [x] 9.1 E2: build round robin and smooth weighted round robin over the healthy subset, plus target pool state; verify:
   - 3:1 yields A, A, B, A, and exactly 3:1 in any 4 consecutive picks.
   - Unhealthy targets are skipped.
   - The pick reports false when no target is healthy.
   - Two pools keep separate rotation.
-- [ ] 9.2 E3: build the breaker state machine with `Release`; verify a fake-clock test per row of the config spec §7 state table, a released trial admitting the next request, and `retry_after` rounding up to at least 1
-- [ ] 9.3 E4: build the retry policy and backoff; verify fixed and exponential delays and `on` filtering for the 502 and 504 stand-ins
+- [x] 9.2 E3: build the breaker state machine with `Release`; verify a fake-clock test per row of the config spec §7 state table, a released trial admitting the next request, and `retry_after` rounding up to at least 1
+- [x] 9.3 E4: build the retry policy and backoff; verify fixed and exponential delays and `on` filtering for the 502 and 504 stand-ins
 
 ## 10. Transforms (E5 to E7, agent `transform`)
 
@@ -141,7 +141,7 @@ When each piece of work starts:
   - Half-open with all targets unhealthy releases the trial.
   - A client cancel is not recorded.
   - `FromUpstream` is false on gateway errors.
-- [ ] 13.2 [resilience] F7: fill `internal/healthcheck` (startup round, interval, probe timeout `min(interval, timeout)`, threshold, recovery, no effect on breaker or limits); verify fake-clock and `httptest` unit tests
+- [x] 13.2 [resilience] F7: fill `internal/healthcheck` (startup round, interval, probe timeout `min(interval, timeout)`, threshold, recovery, no effect on breaker or limits); verify fake-clock and `httptest` unit tests
 - [ ] 13.3 [mock] Write e2e `tests/retry_test.go`, `breaker_test.go`, `health_test.go` and `balance_test.go`; verify `scripts/e2e.sh` passes on the sample, variant B and variant C once 13.1 and 13.2 merge. They cover:
   - **Retry, sample:** waits of 1s and 2s via `X-Mock-Fail-Times`.
   - **Retry, variant C:** `/c/retry` waits 1s, 2s and 4s.
