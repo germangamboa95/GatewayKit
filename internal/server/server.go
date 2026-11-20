@@ -12,7 +12,8 @@ import (
 	"gatewaykit/internal/router"
 )
 
-// Server answers GET /health, routes, then runs the matched route's chain.
+// Server answers GET /health, routes, runs the matched route's chain, writes
+// the response, then logs one access line.
 type Server struct {
 	router *router.Router
 	chains map[*contract.Route]contract.Handler
@@ -38,8 +39,9 @@ func New(cfg *contract.GatewayConfig, chains map[*contract.Route]contract.Handle
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	now := s.deps.Clock.Now()
-	_, resp := s.handle(r, now)
+	route, resp := s.handle(r, now)
 	Write(w, r, resp)
+	s.logAccess(r, route, resp.Status, s.deps.Clock.Now().Sub(now))
 }
 
 func (s *Server) handle(r *http.Request, now time.Time) (*contract.Route, *contract.Response) {
