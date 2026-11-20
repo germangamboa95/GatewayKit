@@ -142,18 +142,10 @@ type RawTransform struct {
 	EnvelopePath string
 }
 
-// IsNull reports whether n means "absent": missing, null, ~ or empty.
+// IsNull reports whether n means "absent": missing or null. The parser turns
+// unquoted null, ~ and empty values into Null nodes.
 func IsNull(n *yamlparse.Node) bool {
-	if n == nil || n.Kind == yamlparse.Null {
-		return true
-	}
-	if n.Kind == yamlparse.Scalar && !n.Quoted {
-		switch n.Value {
-		case "", "~", "null", "Null", "NULL":
-			return true
-		}
-	}
-	return false
+	return n == nil || n.Kind == yamlparse.Null
 }
 
 func join(path, key string) string {

@@ -2,6 +2,8 @@ package config
 
 import (
 	"testing"
+
+	"gatewaykit/internal/yamlparse"
 )
 
 func TestDecodeTyping(t *testing.T) {
@@ -25,10 +27,16 @@ func TestDecodeTyping(t *testing.T) {
 }
 
 func TestDecodeNullIsAbsent(t *testing.T) {
+	src := "gateway: {}\nroutes:\n  - path: \"/\"\n    upstream: { url: \"http://localhost:3001\" }\n    strip_prefix: ~\n    auth: null\n    retry:\n"
+	root, err := yamlparse.ParseYAML([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
 	d := newDiag()
-	raw := Decode(doc(m(), minimalRoute("strip_prefix", s("~"), "auth", nil)), d)
-	if len(d.Errors) != 0 || raw.Routes[0].StripPrefix != nil || raw.Routes[0].Auth != nil {
-		t.Fatalf("errors %v route %+v", d.Errors, raw.Routes[0])
+	raw := Decode(root, d)
+	r := raw.Routes[0]
+	if len(d.Errors) != 0 || r.StripPrefix != nil || r.Auth != nil || r.Retry != nil {
+		t.Fatalf("errors %v route %+v", d.Errors, r)
 	}
 }
 

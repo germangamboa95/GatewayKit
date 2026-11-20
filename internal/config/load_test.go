@@ -7,19 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gatewaykit/internal/yamlparse"
 )
 
-func requireParser(t *testing.T) {
-	t.Helper()
-	if _, err := yamlparse.ParseYAML([]byte("a: 1\n")); err != nil {
-		t.Skipf("yamlparse not available: %v", err)
-	}
-}
-
 func TestLoadConfigs(t *testing.T) {
-	requireParser(t)
 	cfg, warns, err := Load("../../configs/gateway.yaml")
 	if err != nil || len(warns) != 0 {
 		t.Fatalf("sample: err %v warns %v", err, warns)
@@ -42,7 +32,6 @@ func TestLoadConfigs(t *testing.T) {
 }
 
 func TestLoadSampleMatchesFixture(t *testing.T) {
-	requireParser(t)
 	cfg, _, err := Load("../../configs/gateway.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +48,6 @@ func TestLoadSampleMatchesFixture(t *testing.T) {
 }
 
 func TestLoadErrors(t *testing.T) {
-	requireParser(t)
 	dir := t.TempDir()
 	p := filepath.Join(dir, "gateway.yaml")
 	src := "gateway: {}\nroutes:\n  - path: \"/\"\n    upstream:\n      url: \"http://localhost:3001\"\n      balance: random\n"
