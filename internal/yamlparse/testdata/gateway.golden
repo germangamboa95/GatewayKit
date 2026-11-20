@@ -1,0 +1,118 @@
+map(2) @2:1
+  "gateway": map(3) @3:3
+    "port": "8080" plain @3:9
+    "global_timeout": "30s" quoted @6:19
+    "global_rate_limit": map(4) @8:5
+      "requests": "100" plain @8:15
+      "window": "60s" quoted @9:13
+      "strategy": "fixed_window" quoted @10:15
+      "per": "ip" quoted @11:10
+  "routes": seq(5) @14:3
+    - [0] map(5) @14:5
+      "path": "/api/users" quoted @14:11
+      "methods": seq(2) @15:14
+        - [0] "GET" quoted @15:15
+        - [1] "POST" quoted @15:22
+      "strip_prefix": "false" plain @16:19
+      "upstream": map(1) @18:7
+        "url": "http://localhost:3001" quoted @18:12
+      "rate_limit": map(4) @20:7
+        "requests": "30" plain @20:17
+        "window": "60s" quoted @21:15
+        "strategy": "sliding_window" quoted @22:17
+        "per": "ip" quoted @23:12
+    - [1] map(5) @25:5
+      "path": "/api/orders" quoted @25:11
+      "methods": seq(3) @26:14
+        - [0] "GET" quoted @26:15
+        - [1] "POST" quoted @26:22
+        - [2] "PUT" quoted @26:30
+      "strip_prefix": "false" plain @27:19
+      "upstream": map(3) @29:7
+        "url": "http://localhost:3002" quoted @29:12
+        "timeout": "5s" quoted @30:16
+        "retry": map(4) @32:9
+          "attempts": "3" plain @32:19
+          "backoff": "exponential" quoted @33:18
+          "initial_delay": "1s" quoted @34:24
+          "on": seq(3) @35:13
+            - [0] "502" plain @35:14
+            - [1] "503" plain @35:19
+            - [2] "504" plain @35:24
+      "rate_limit": map(4) @37:7
+        "requests": "10" plain @37:17
+        "window": "10s" quoted @38:15
+        "strategy": "fixed_window" quoted @39:17
+        "per": "ip" quoted @40:12
+    - [2] map(4) @42:5
+      "path": "/api/products" quoted @42:11
+      "methods": seq(1) @43:14
+        - [0] "GET" quoted @43:15
+      "strip_prefix": "true" plain @44:19
+      "upstream": map(4) @46:7
+        "targets": seq(2) @47:9
+          - [0] map(2) @47:11
+            "url": "http://localhost:3003" quoted @47:16
+            "weight": "3" plain @48:19
+          - [1] map(2) @49:11
+            "url": "http://localhost:3004" quoted @49:16
+            "weight": "1" plain @50:19
+        "balance": "weighted_round_robin" quoted @51:16
+        "timeout": "10s" quoted @52:16
+        "health_check": map(3) @54:9
+          "path": "/healthz" quoted @54:15
+          "interval": "30s" quoted @55:19
+          "unhealthy_threshold": "3" plain @56:30
+    - [3] map(6) @58:5
+      "path": "/api/legacy" quoted @58:11
+      "methods": seq(2) @59:14
+        - [0] "GET" quoted @59:15
+        - [1] "POST" quoted @59:22
+      "strip_prefix": "true" plain @60:19
+      "upstream": map(1) @62:7
+        "url": "http://localhost:3005" quoted @62:12
+      "request_transform": map(2) @64:7
+        "headers": map(2) @65:9
+          "add": map(2) @66:11
+            "X-Gateway": "gatewaykit" quoted @66:22
+            "X-Request-Start": "$request_time" quoted @67:28
+          "remove": seq(2) @68:17
+            - [0] "X-Debug" quoted @68:18
+            - [1] "X-Internal" quoted @68:29
+        "body": map(1) @72:9
+          "mapping": map(4) @73:11
+            "user.id": "userId" quoted @73:20
+            "user.name": "userName" quoted @74:22
+            "meta.source": "$literal:gateway" quoted @75:24
+            "meta.timestamp": "$request_time" quoted @76:27
+      "response_transform": map(2) @78:7
+        "headers": map(2) @79:9
+          "add": map(1) @80:11
+            "X-Served-By": "gatewaykit" quoted @80:24
+          "remove": seq(2) @81:17
+            - [0] "Server" quoted @81:18
+            - [1] "X-Powered-By" quoted @81:28
+        "body": map(1) @84:9
+          "envelope": map(2) @85:11
+            "data": "$body" quoted @85:17
+            "gateway_metadata": map(2) @87:13
+              "served_at": "$response_time" quoted @87:24
+              "route": "$route_path" quoted @88:20
+    - [4] map(6) @90:5
+      "path": "/api/internal" quoted @90:11
+      "methods": seq(2) @91:14
+        - [0] "GET" quoted @91:15
+        - [1] "POST" quoted @91:22
+      "strip_prefix": "false" plain @92:19
+      "upstream": map(1) @94:7
+        "url": "http://localhost:3006" quoted @94:12
+      "auth": map(3) @96:7
+        "type": "api_key" quoted @96:13
+        "header": "X-API-Key" quoted @97:15
+        "keys": seq(2) @98:13
+          - [0] "sk_live_abc123" quoted @98:14
+          - [1] "sk_live_def456" quoted @98:32
+      "circuit_breaker": map(3) @100:7
+        "threshold": "5" plain @100:18
+        "window": "60s" quoted @101:15
+        "cooldown": "30s" quoted @102:17
