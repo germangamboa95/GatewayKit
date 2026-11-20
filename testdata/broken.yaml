@@ -1,0 +1,25 @@
+# Three config errors for the exit-code test (main_test.go).
+gateway:
+  port: 8080
+
+routes:
+  - path: "/a"
+    upstream:
+      url: "http://localhost:3001"
+      targets:
+        - url: "http://localhost:3002"
+
+  - path: "/b"
+    upstream:
+      targets:
+        - url: "http://localhost:3003"
+          weight: 0
+        - url: "http://localhost:3004"
+
+  - path: "/c"
+    upstream:
+      url: "http://localhost:3004"
+    response_transform:
+      headers:
+        add:
+          X-Time: "$requst_time"
