@@ -360,3 +360,67 @@ func TestPoolMarkProbe(t *testing.T) {
 		t.Fatal("not recovered")
 	}
 }
+
+func TestUpstream499IsRecordedNotCancel(t *testing.T) {
+	route := mkRoute(t, 0, "http://a:1")
+	c := &fakeClient{results: []result{{status: contract.StatusClientClosed}}}
+	d, _, _ := deps(c)
+	cb := &fakeBreaker{allow: 10}
+	ctx := mkCtx("")
+	res := New(route, d, WithBreaker(cb))(ctx)
+	if res.Status != contract.StatusClientClosed || !res.FromUpstream {
+		t.Fatalf("res %+v", res)
+	}
+	if len(cb.records) != 1 || !cb.records[0] || cb.releases != 0 {
+		t.Fatalf("records %v releases %d", cb.records, cb.releases)
+	}
+	if ctx.Upstream == nil {
+		t.Fatal("upstream response not stored")
+	}
+}
+
+type ticketBreaker struct {
+	fakeBreaker
+	next     uint64
+	settled  []uint64
+	released []uint64
+}
+
+func (b *ticketBreaker) Admit(now time.Time) (bool, int, uint64) {
+	ok, ra := b.TryPass(now)
+	if !ok {
+		return false, ra, 0
+	}
+	b.next++
+	return true, 0, b.next + 100
+}
+
+func (b *ticketBreaker) Settle(ticket uint64, ok bool, now time.Time) {
+	b.settled = append(b.settled, ticket)
+}
+
+func (b *ticketBreaker) Abandon(ticket uint64) { b.released = append(b.released, ticket) }
+
+func TestTicketBreakerGetsAttemptTickets(t *testing.T) {
+	route := mkRoute(t, 2, "http://a:1")
+	c := &fakeClient{results: []result{{status: 503}, {status: 200}}}
+	d, _, _ := deps(c)
+	cb := &ticketBreaker{fakeBreaker: fakeBreaker{allow: 10}}
+	New(route, d, WithBreaker(cb), WithRetry(fakeRetry{on: on5xx}))(mkCtx(""))
+	if len(cb.settled) != 2 || cb.settled[0] != 101 || cb.settled[1] != 102 || len(cb.records) != 0 {
+		t.Fatalf("settled %v records %v", cb.settled, cb.records)
+	}
+
+	route.Targets[0].SetHealthy(false)
+	cb2 := &ticketBreaker{fakeBreaker: fakeBreaker{allow: 10}}
+	New(route, d, WithBreaker(cb2), WithPool(healthPool{route.Targets}))(mkCtx(""))
+	if len(cb2.released) != 1 || cb2.released[0] != 101 || cb2.releases != 0 {
+		t.Fatalf("released %v releases %d", cb2.released, cb2.releases)
+	}
+}
+
+type healthPool struct{ ts []*contract.Target }
+
+func (p healthPool) Targets() []*contract.Target           { return p.ts }
+func (p healthPool) Healthy(t *contract.Target) bool       { return t.Healthy() }
+func (p healthPool) MarkProbe(t *contract.Target, ok bool) {}
