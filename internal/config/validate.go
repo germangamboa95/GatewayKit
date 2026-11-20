@@ -4,18 +4,17 @@ import (
 	"net/url"
 	"strings"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 type validator struct {
-	d   *Diag
-	raw *Raw
+	d   *diag
+	raw *rawConfig
 }
 
-// Validate applies every per-field and cross-field rule to raw, appending
+// validate applies every per-field and cross-field rule to raw, appending
 // errors and warnings to d.
-func Validate(raw *Raw, d *Diag) {
+func validate(raw *rawConfig, d *diag) {
 	if raw == nil {
 		return
 	}
@@ -27,7 +26,7 @@ func Validate(raw *Raw, d *Diag) {
 	if raw.GlobalRateLimit != nil {
 		v.rateLimitFields(raw.GlobalRateLimit)
 	}
-	seen := map[string]*RawRoute{}
+	seen := map[string]*rawRoute{}
 	for _, r := range raw.Routes {
 		v.route(r, seen)
 	}
@@ -37,42 +36,45 @@ func (v *validator) required(parent *yamlparse.Node, path string) {
 	v.d.Errorf(parent, path, "required field is missing")
 }
 
-func (v *validator) minInt(i *Int, min int) {
+func (v *validator) minInt(i *rawInt, min int) {
 	if i != nil && i.V < min {
 		v.d.Errorf(i.N, i.Path, "must be an integer >= %d (got %d)", min, i.V)
 	}
 }
 
-func (v *validator) positive(d *Dur) {
+func (v *validator) positive(d *rawDur) {
 	if d != nil && d.V <= 0 {
 		v.d.Errorf(d.N, d.Path, "duration must be greater than 0 (got %q)", d.N.Value)
 	}
 }
 
-func (v *validator) enum(s *Str, allowed ...string) {
+// enum reports an error unless s is one of allowed.
+func enum[T ~string](v *validator, s *rawStr, allowed ...T) {
 	if s == nil {
 		return
 	}
-	for _, a := range allowed {
-		if s.V == a {
+	names := make([]string, len(allowed))
+	for i, a := range allowed {
+		if s.V == string(a) {
 			return
 		}
+		names[i] = string(a)
 	}
-	v.d.Errorf(s.N, s.Path, "invalid value %q (allowed: %s)", s.N.Value, strings.Join(allowed, ", "))
+	v.d.Errorf(s.N, s.Path, "invalid value %q (allowed: %s)", s.N.Value, strings.Join(names, ", "))
 }
 
-func (v *validator) rateLimitFields(rl *RawRateLimit) {
+func (v *validator) rateLimitFields(rl *rawRateLimit) {
 	if rl.Disabled {
 		return
 	}
 	v.minInt(rl.Requests, 1)
 	v.positive(rl.Window)
-	v.enum(rl.Strategy, contract.StrategyFixedWindow, contract.StrategySlidingWindow)
-	v.enum(rl.Per, contract.PerIP, contract.PerGlobal)
+	enum(v, rl.Strategy, StrategyFixedWindow, StrategySlidingWindow)
+	enum(v, rl.Per, PerIP, PerGlobal)
 }
 
-// NormalizePath removes a trailing slash, keeping "/" itself.
-func NormalizePath(p string) string {
+// normalizePath removes a trailing slash, keeping "/" itself.
+func normalizePath(p string) string {
 	t := strings.TrimRight(p, "/")
 	if t == "" {
 		return "/"
@@ -80,13 +82,13 @@ func NormalizePath(p string) string {
 	return t
 }
 
-func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
+func (v *validator) route(r *rawRoute, seen map[string]*rawRoute) {
 	if r.RoutePath == nil {
 		if !hasKey(r.N, "path") {
 			v.required(r.N, r.Path+".path")
 		}
 	} else if v.routePath(r.RoutePath) {
-		np := NormalizePath(r.RoutePath.V)
+		np := normalizePath(r.RoutePath.V)
 		if prev, ok := seen[np]; ok {
 			v.d.Errorf(r.RoutePath.N, r.RoutePath.Path, "duplicate route path %q (also %s)", np, prev.Path)
 		} else {
@@ -101,7 +103,7 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 		v.d.Errorf(r.MethodsNode, r.Path+".methods", "must be a non-empty list")
 	}
 	for _, m := range r.Methods {
-		v.enum(m, contract.DefaultMethods...)
+		enum(v, m, DefaultMethods...)
 	}
 	if r.Upstream == nil {
 		if !hasKey(r.N, "upstream") {
@@ -116,7 +118,7 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 			v.required(rt.N, rt.Path+".attempts")
 		}
 		v.minInt(rt.Attempts, 1)
-		v.enum(rt.Backoff, contract.BackoffFixed, contract.BackoffExponential)
+		enum(v, rt.Backoff, BackoffFixed, BackoffExponential)
 		if rt.OnNode != nil && rt.OnNode.Kind == yamlparse.Seq && len(rt.OnNode.Items) == 0 {
 			v.d.Errorf(rt.OnNode, rt.Path+".on", "must be a non-empty list")
 		}
@@ -155,7 +157,7 @@ func (v *validator) route(r *RawRoute, seen map[string]*RawRoute) {
 				v.required(a.N, a.Path+".type")
 			}
 		} else {
-			v.enum(a.Type, contract.AuthTypeAPIKey)
+			enum(v, a.Type, AuthTypeAPIKey)
 		}
 		if a.Header != nil && strings.TrimSpace(a.Header.V) == "" {
 			v.d.Errorf(a.Header.N, a.Header.Path, "must not be empty")
@@ -178,10 +180,10 @@ func hasKey(n *yamlparse.Node, k string) bool {
 		return false
 	}
 	c, ok := n.Map[k]
-	return ok && !IsNull(c)
+	return ok && !isNull(c)
 }
 
-func (v *validator) routePath(s *Str) bool {
+func (v *validator) routePath(s *rawStr) bool {
 	p := s.V
 	switch {
 	case !strings.HasPrefix(p, "/"):
@@ -198,7 +200,7 @@ func (v *validator) routePath(s *Str) bool {
 	return false
 }
 
-func (v *validator) url(s *Str) {
+func (v *validator) url(s *rawStr) {
 	u, err := url.Parse(s.V)
 	switch {
 	case err != nil:
@@ -214,7 +216,7 @@ func (v *validator) url(s *Str) {
 	}
 }
 
-func (v *validator) upstream(u *RawUpstream) {
+func (v *validator) upstream(u *rawUpstream) {
 	if (u.URL != nil) == (u.TargetsNode != nil) {
 		if u.URL != nil || !hasKey(u.N, "url") {
 			v.d.Errorf(u.N, u.Path, "exactly one of \"url\" or \"targets\" is required")
@@ -242,10 +244,10 @@ func (v *validator) upstream(u *RawUpstream) {
 		}
 		v.minInt(t.Weight, 1)
 	}
-	v.enum(u.Balance, contract.BalanceRoundRobin, contract.BalanceWeightedRoundRobin)
+	enum(v, u.Balance, BalanceRoundRobin, BalanceWeightedRoundRobin)
 	single := u.URL != nil && u.TargetsNode == nil || u.URL == nil && len(u.Targets) == 1
 	if single {
-		if u.Balance != nil && (u.Balance.V == contract.BalanceRoundRobin || u.Balance.V == contract.BalanceWeightedRoundRobin) {
+		if u.Balance != nil && (Balance(u.Balance.V) == BalanceRoundRobin || Balance(u.Balance.V) == BalanceWeightedRoundRobin) {
 			v.d.Warnf(u.Balance.N, u.Balance.Path, "has no effect with only one target")
 		}
 		for _, t := range u.Targets {
@@ -256,7 +258,7 @@ func (v *validator) upstream(u *RawUpstream) {
 	}
 }
 
-func (v *validator) mergedRateLimit(r *RawRoute) {
+func (v *validator) mergedRateLimit(r *rawRoute) {
 	rl, g := r.RateLimit, v.raw.GlobalRateLimit
 	if rl != nil && rl.Disabled || rl == nil && g == nil {
 		return

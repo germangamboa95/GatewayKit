@@ -3,13 +3,13 @@ package transform
 import (
 	"bytes"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 // MapBody applies m to body. It returns mapped=false with a nil error when
 // the body is empty or valid JSON that is not an object; such bodies are
 // forwarded unchanged. A body that does not parse returns an error.
-func MapBody(body []byte, m *contract.Mapping, env Env) (out []byte, mapped bool, err error) {
+func MapBody(body []byte, m *config.Mapping, env Env) (out []byte, mapped bool, err error) {
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 {
 		return nil, false, nil

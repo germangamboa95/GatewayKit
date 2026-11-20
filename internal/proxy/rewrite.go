@@ -1,5 +1,5 @@
-// Package proxy holds path rewriting, the upstream HTTP client, the
-// per-attempt timeout and a single-attempt terminal handler.
+// Package proxy forwards one request to an upstream target: path rewriting,
+// the upstream HTTP client, the per-attempt timeout and error classification.
 package proxy
 
 import "strings"

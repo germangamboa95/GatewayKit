@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 var managed = map[string]bool{
@@ -27,7 +27,7 @@ func IsManaged(name string) bool {
 
 // ApplyHeaders removes, then adds, skipping managed headers. Each add
 // replaces any existing value.
-func ApplyHeaders(h http.Header, remove []string, add []contract.HeaderAdd, env Env) {
+func ApplyHeaders(h http.Header, remove []string, add []config.HeaderAdd, env Env) {
 	for _, name := range remove {
 		if IsManaged(name) {
 			continue

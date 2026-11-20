@@ -1,50 +1,64 @@
-// Package server is the gateway's root http.Handler (design D6).
+// Package server is the gateway's root http.Handler: it answers the health
+// endpoint, routes each request, runs the route's chain and writes the
+// response.
 package server
 
 import (
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/router"
+	"github.com/germangamboa95/gatewaykit/internal/clock"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
+	"github.com/germangamboa95/gatewaykit/internal/router"
 )
 
 // Server answers GET /health, routes, runs the matched route's chain, writes
 // the response, then logs one access line.
 type Server struct {
 	router *router.Router
-	chains map[*contract.Route]contract.Handler
-	deps   contract.Deps
+	chains map[*config.Route]gateway.Handler
+	clock  clock.Clock
+	logger *slog.Logger
 	start  time.Time
 }
 
 // New builds the root handler. chains maps each route to its assembled
-// handler. Uptime counts from the moment New is called.
-func New(cfg *contract.GatewayConfig, chains map[*contract.Route]contract.Handler, deps contract.Deps) *Server {
-	deps = deps.WithDefaults()
-	var routes []*contract.Route
+// handler. Uptime counts from the moment New is called. A nil clk means the
+// system clock; a nil logger means slog.Default().
+func New(cfg *config.Gateway, chains map[*config.Route]gateway.Handler, clk clock.Clock, logger *slog.Logger) *Server {
+	if clk == nil {
+		clk = clock.System{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	var routes []*config.Route
 	if cfg != nil {
 		routes = cfg.Routes
 	}
 	return &Server{
 		router: router.New(routes),
 		chains: chains,
-		deps:   deps,
-		start:  deps.Clock.Now(),
+		clock:  clk,
+		logger: logger,
+		start:  clk.Now(),
 	}
 }
 
+// ServeHTTP handles one request end to end.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	now := s.deps.Clock.Now()
+	now := s.clock.Now()
 	route, resp := s.handle(r, now)
 	Write(w, r, resp)
-	s.logAccess(r, route, resp.Status, s.deps.Clock.Now().Sub(now))
+	s.logAccess(r, route, resp.Status, s.clock.Now().Sub(now))
 }
 
-func (s *Server) handle(r *http.Request, now time.Time) (*contract.Route, *contract.Response) {
+func (s *Server) handle(r *http.Request, now time.Time) (*config.Route, *gateway.Response) {
 	if r.Method == http.MethodGet && r.URL.Path == "/health" {
 		return nil, s.health(now)
 	}
@@ -54,47 +68,47 @@ func (s *Server) handle(r *http.Request, now time.Time) (*contract.Route, *contr
 	}
 	chain := s.chains[route]
 	if chain == nil {
-		s.deps.Logger.Error("no handler for route", "route", route.Path)
-		return route, contract.BadGateway()
+		s.logger.Error("no handler for route", "route", route.Path)
+		return route, gateway.BadGateway()
 	}
 	var body []byte
 	if r.Body != nil {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
-			return route, &contract.Response{Status: contract.StatusClientClosed}
+			return route, &gateway.Response{Status: gateway.StatusClientClosed}
 		}
 		body = b
 	}
-	ctx := &contract.RequestContext{
+	rc := &gateway.RequestContext{
 		Req:         r,
 		ClientIP:    ClientIP(r.RemoteAddr),
 		Route:       route,
 		RequestTime: now,
 		Body:        body,
 	}
-	resp := s.run(chain, ctx)
+	resp := s.run(chain, rc)
 	if resp == nil {
-		return route, contract.BadGateway()
+		return route, gateway.BadGateway()
 	}
 	return route, resp
 }
 
-func (s *Server) run(chain contract.Handler, ctx *contract.RequestContext) (resp *contract.Response) {
+func (s *Server) run(chain gateway.Handler, rc *gateway.RequestContext) (resp *gateway.Response) {
 	defer func() {
 		if v := recover(); v != nil {
-			s.deps.Logger.Error("handler panic", "route", ctx.Route.Path, "panic", v)
-			resp = contract.BadGateway()
+			s.logger.Error("handler panic", "route", rc.Route.Path, "panic", v)
+			resp = gateway.BadGateway()
 		}
 	}()
-	return chain(ctx)
+	return chain(rc)
 }
 
-func (s *Server) health(now time.Time) *contract.Response {
+func (s *Server) health(now time.Time) *gateway.Response {
 	up := int64(now.Sub(s.start) / time.Second)
 	if up < 0 {
 		up = 0
 	}
-	return &contract.Response{
+	return &gateway.Response{
 		Status: http.StatusOK,
 		Header: http.Header{"Content-Type": {"application/json"}},
 		Body:   []byte(`{"status":"healthy","uptime_seconds":` + strconv.FormatInt(up, 10) + `}`),
@@ -112,7 +126,7 @@ func ClientIP(addr string) string {
 
 // Write sends resp to the client. It sets Content-Length from the body,
 // except on HEAD, 1xx, 204 and 304 responses, which carry no body.
-func Write(w http.ResponseWriter, r *http.Request, resp *contract.Response) {
+func Write(w http.ResponseWriter, r *http.Request, resp *gateway.Response) {
 	h := w.Header()
 	for k, v := range resp.Header {
 		h[k] = append([]string(nil), v...)

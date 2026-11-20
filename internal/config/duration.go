@@ -11,9 +11,9 @@ import (
 var durationRE = regexp.MustCompile(`^(\d+(?:\.\d+)?)(ms|s|m|h)$`)
 var bareIntRE = regexp.MustCompile(`^\d+$`)
 
-// ParseDuration parses a config duration: a number with ms, s, m or h, or a
+// parseDuration parses a config duration: a number with ms, s, m or h, or a
 // bare integer meaning seconds. Zero is rejected unless allowZero is set.
-func ParseDuration(s string, allowZero bool) (time.Duration, error) {
+func parseDuration(s string, allowZero bool) (time.Duration, error) {
 	d, err := parseDurationSyntax(s)
 	if err != nil {
 		return 0, err

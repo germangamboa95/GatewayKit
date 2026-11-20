@@ -6,145 +6,145 @@ import (
 	"strings"
 	"time"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
-// Int, Bool, Str and Dur are decoded scalars with their node and field path.
-type Int struct {
+// rawInt, rawBool, rawStr and rawDur are decoded scalars with their node and field path.
+type rawInt struct {
 	V    int
 	N    *yamlparse.Node
 	Path string
 }
 
-type Bool struct {
+type rawBool struct {
 	V    bool
 	N    *yamlparse.Node
 	Path string
 }
 
-type Str struct {
+type rawStr struct {
 	V    string
 	N    *yamlparse.Node
 	Path string
 }
 
-type Dur struct {
+type rawDur struct {
 	V    time.Duration
 	N    *yamlparse.Node
 	Path string
 }
 
-// Raw is the decoded config before validation and normalization.
-type Raw struct {
+// rawConfig is the decoded config before validation and normalization.
+type rawConfig struct {
 	Root            *yamlparse.Node
 	GatewayNode     *yamlparse.Node
-	Port            *Int
-	GlobalTimeout   *Dur
-	GlobalRateLimit *RawRateLimit
-	Routes          []*RawRoute
+	Port            *rawInt
+	GlobalTimeout   *rawDur
+	GlobalRateLimit *rawRateLimit
+	Routes          []*rawRoute
 }
 
-type RawRateLimit struct {
+type rawRateLimit struct {
 	N        *yamlparse.Node
 	Path     string
 	Disabled bool
-	Requests *Int
-	Window   *Dur
-	Strategy *Str
-	Per      *Str
+	Requests *rawInt
+	Window   *rawDur
+	Strategy *rawStr
+	Per      *rawStr
 }
 
-type RawRoute struct {
+type rawRoute struct {
 	N              *yamlparse.Node
 	Path           string
-	RoutePath      *Str
-	Methods        []*Str
+	RoutePath      *rawStr
+	Methods        []*rawStr
 	MethodsNode    *yamlparse.Node
-	StripPrefix    *Bool
-	Upstream       *RawUpstream
-	Timeout        *Dur
-	Retry          *RawRetry
-	HealthCheck    *RawHealthCheck
-	CircuitBreaker *RawCircuitBreaker
-	RateLimit      *RawRateLimit
-	Auth           *RawAuth
-	ReqTransform   *RawTransform
-	RespTransform  *RawTransform
+	StripPrefix    *rawBool
+	Upstream       *rawUpstream
+	Timeout        *rawDur
+	Retry          *rawRetry
+	HealthCheck    *rawHealthCheck
+	CircuitBreaker *rawCircuitBreaker
+	RateLimit      *rawRateLimit
+	Auth           *rawAuth
+	ReqTransform   *rawTransform
+	RespTransform  *rawTransform
 }
 
-type RawUpstream struct {
+type rawUpstream struct {
 	N           *yamlparse.Node
 	Path        string
-	URL         *Str
-	Targets     []*RawTarget
+	URL         *rawStr
+	Targets     []*rawTarget
 	TargetsNode *yamlparse.Node
-	Balance     *Str
+	Balance     *rawStr
 }
 
-type RawTarget struct {
+type rawTarget struct {
 	N      *yamlparse.Node
 	Path   string
-	URL    *Str
-	Weight *Int
+	URL    *rawStr
+	Weight *rawInt
 }
 
-type RawRetry struct {
+type rawRetry struct {
 	N            *yamlparse.Node
 	Path         string
-	Attempts     *Int
-	Backoff      *Str
-	InitialDelay *Dur
-	On           []*Int
+	Attempts     *rawInt
+	Backoff      *rawStr
+	InitialDelay *rawDur
+	On           []*rawInt
 	OnNode       *yamlparse.Node
 }
 
-type RawHealthCheck struct {
+type rawHealthCheck struct {
 	N                  *yamlparse.Node
 	Path               string
-	HCPath             *Str
-	Interval           *Dur
-	UnhealthyThreshold *Int
+	HCPath             *rawStr
+	Interval           *rawDur
+	UnhealthyThreshold *rawInt
 }
 
-type RawCircuitBreaker struct {
+type rawCircuitBreaker struct {
 	N         *yamlparse.Node
 	Path      string
-	Threshold *Int
-	Window    *Dur
-	Cooldown  *Dur
+	Threshold *rawInt
+	Window    *rawDur
+	Cooldown  *rawDur
 }
 
-type RawAuth struct {
+type rawAuth struct {
 	N        *yamlparse.Node
 	Path     string
-	Type     *Str
-	Header   *Str
-	Keys     []*Str
+	Type     *rawStr
+	Header   *rawStr
+	Keys     []*rawStr
 	KeysNode *yamlparse.Node
 }
 
-// RawHeader is one headers.add entry.
-type RawHeader struct {
+// rawHeader is one headers.add entry.
+type rawHeader struct {
 	Name  string
 	Key   *yamlparse.Node
-	Value *Str
+	Value *rawStr
 }
 
-type RawTransform struct {
+type rawTransform struct {
 	N            *yamlparse.Node
 	Path         string
 	Request      bool
-	Add          []*RawHeader
-	Remove       []*Str
-	Mapping      []*RawHeader
+	Add          []*rawHeader
+	Remove       []*rawStr
+	Mapping      []*rawHeader
 	MappingNode  *yamlparse.Node
 	Envelope     *yamlparse.Node
 	EnvelopePath string
 }
 
-// IsNull reports whether n means "absent": missing or null. The parser turns
+// isNull reports whether n means "absent": missing or null. The parser turns
 // unquoted null, ~ and empty values into Null nodes.
-func IsNull(n *yamlparse.Node) bool {
+func isNull(n *yamlparse.Node) bool {
 	return n == nil || n.Kind == yamlparse.Null
 }
 
@@ -168,7 +168,7 @@ func kindName(n *yamlparse.Node) string {
 }
 
 type decoder struct {
-	d *Diag
+	d *diag
 }
 
 // fields checks n is a map, warns on unknown keys and returns the non-null
@@ -192,7 +192,7 @@ func (dc *decoder) fields(n *yamlparse.Node, path string, known ...string) map[s
 			dc.d.Warnf(keyNode(n, k, v), join(path, k), "unknown key, ignored")
 			continue
 		}
-		if !IsNull(v) {
+		if !isNull(v) {
 			out[k] = v
 		}
 	}
@@ -219,7 +219,7 @@ func (dc *decoder) scalar(n *yamlparse.Node, path, want string) bool {
 	return true
 }
 
-func (dc *decoder) intVal(n *yamlparse.Node, path string) *Int {
+func (dc *decoder) intVal(n *yamlparse.Node, path string) *rawInt {
 	if n == nil || !dc.scalar(n, path, "an integer") {
 		return nil
 	}
@@ -228,32 +228,32 @@ func (dc *decoder) intVal(n *yamlparse.Node, path string) *Int {
 		dc.d.Errorf(n, path, "expected an integer, got %q", n.Value)
 		return nil
 	}
-	return &Int{V: v, N: n, Path: path}
+	return &rawInt{V: v, N: n, Path: path}
 }
 
-func (dc *decoder) boolVal(n *yamlparse.Node, path string) *Bool {
+func (dc *decoder) boolVal(n *yamlparse.Node, path string) *rawBool {
 	if n == nil || !dc.scalar(n, path, "true or false") {
 		return nil
 	}
 	switch n.Value {
 	case "true":
-		return &Bool{V: true, N: n, Path: path}
+		return &rawBool{V: true, N: n, Path: path}
 	case "false":
-		return &Bool{V: false, N: n, Path: path}
+		return &rawBool{V: false, N: n, Path: path}
 	}
 	dc.d.Errorf(n, path, "expected true or false, got %q", n.Value)
 	return nil
 }
 
-func (dc *decoder) strVal(n *yamlparse.Node, path string) *Str {
+func (dc *decoder) strVal(n *yamlparse.Node, path string) *rawStr {
 	if n == nil || !dc.scalar(n, path, "a string") {
 		return nil
 	}
-	return &Str{V: n.Value, N: n, Path: path}
+	return &rawStr{V: n.Value, N: n, Path: path}
 }
 
 // enumVal stores the value in lowercase; validation checks the allowed set.
-func (dc *decoder) enumVal(n *yamlparse.Node, path string) *Str {
+func (dc *decoder) enumVal(n *yamlparse.Node, path string) *rawStr {
 	s := dc.strVal(n, path)
 	if s != nil {
 		s.V = strings.ToLower(s.V)
@@ -261,7 +261,7 @@ func (dc *decoder) enumVal(n *yamlparse.Node, path string) *Str {
 	return s
 }
 
-func (dc *decoder) durVal(n *yamlparse.Node, path string) *Dur {
+func (dc *decoder) durVal(n *yamlparse.Node, path string) *rawDur {
 	if n == nil || !dc.scalar(n, path, "a duration") {
 		return nil
 	}
@@ -270,7 +270,7 @@ func (dc *decoder) durVal(n *yamlparse.Node, path string) *Dur {
 		dc.d.Errorf(n, path, "%s", err.Error())
 		return nil
 	}
-	return &Dur{V: v, N: n, Path: path}
+	return &rawDur{V: v, N: n, Path: path}
 }
 
 func (dc *decoder) list(n *yamlparse.Node, path string) []*yamlparse.Node {
@@ -283,10 +283,10 @@ func (dc *decoder) list(n *yamlparse.Node, path string) []*yamlparse.Node {
 
 func idx(path string, i int) string { return fmt.Sprintf("%s[%d]", path, i) }
 
-// Decode walks the node tree against the schema. It records type errors and
+// decode walks the node tree against the schema. It records type errors and
 // unknown-key warnings in d and resolves lenient placement. It returns nil
 // only when the top level is unusable.
-func Decode(root *yamlparse.Node, d *Diag) *Raw {
+func decode(root *yamlparse.Node, d *diag) *rawConfig {
 	dc := &decoder{d: d}
 	if root == nil || root.Kind != yamlparse.Map {
 		if root == nil {
@@ -295,7 +295,7 @@ func Decode(root *yamlparse.Node, d *Diag) *Raw {
 		d.Errorf(root, "", "top-level value must be a map, got %s", kindName(root))
 		return nil
 	}
-	raw := &Raw{Root: root}
+	raw := &rawConfig{Root: root}
 	top := dc.fields(root, "", "gateway", "routes")
 	gw := top["gateway"]
 	var routesNode *yamlparse.Node
@@ -337,12 +337,12 @@ var routeKeys = []string{"path", "methods", "strip_prefix", "upstream", "rate_li
 
 var upstreamKeys = []string{"url", "targets", "balance", "timeout", "retry", "health_check", "circuit_breaker"}
 
-func (dc *decoder) route(n *yamlparse.Node, path string) *RawRoute {
+func (dc *decoder) route(n *yamlparse.Node, path string) *rawRoute {
 	f := dc.fields(n, path, routeKeys...)
 	if f == nil {
 		return nil
 	}
-	r := &RawRoute{N: n, Path: path}
+	r := &rawRoute{N: n, Path: path}
 	r.RoutePath = dc.strVal(f["path"], join(path, "path"))
 	if mn := f["methods"]; mn != nil {
 		r.MethodsNode = mn
@@ -360,7 +360,7 @@ func (dc *decoder) route(n *yamlparse.Node, path string) *RawRoute {
 		upath := join(path, "upstream")
 		uf = dc.fields(un, upath, upstreamKeys...)
 		if uf != nil {
-			u := &RawUpstream{N: un, Path: upath}
+			u := &rawUpstream{N: un, Path: upath}
 			u.URL = dc.strVal(uf["url"], join(upath, "url"))
 			if tn := uf["targets"]; tn != nil {
 				u.TargetsNode = tn
@@ -370,7 +370,7 @@ func (dc *decoder) route(n *yamlparse.Node, path string) *RawRoute {
 					if tf == nil {
 						continue
 					}
-					u.Targets = append(u.Targets, &RawTarget{
+					u.Targets = append(u.Targets, &rawTarget{
 						N: it, Path: tpath,
 						URL:    dc.strVal(tf["url"], join(tpath, "url")),
 						Weight: dc.intVal(tf["weight"], join(tpath, "weight")),
@@ -424,10 +424,10 @@ func (dc *decoder) route(n *yamlparse.Node, path string) *RawRoute {
 	return r
 }
 
-func (dc *decoder) rateLimit(n *yamlparse.Node, path string, allowFalse bool) *RawRateLimit {
+func (dc *decoder) rateLimit(n *yamlparse.Node, path string, allowFalse bool) *rawRateLimit {
 	if n.Kind == yamlparse.Scalar {
 		if allowFalse && n.Value == "false" && !n.Quoted {
-			return &RawRateLimit{N: n, Path: path, Disabled: true}
+			return &rawRateLimit{N: n, Path: path, Disabled: true}
 		}
 		want := "a map"
 		if allowFalse {
@@ -440,7 +440,7 @@ func (dc *decoder) rateLimit(n *yamlparse.Node, path string, allowFalse bool) *R
 	if f == nil {
 		return nil
 	}
-	return &RawRateLimit{
+	return &rawRateLimit{
 		N: n, Path: path,
 		Requests: dc.intVal(f["requests"], join(path, "requests")),
 		Window:   dc.durVal(f["window"], join(path, "window")),
@@ -449,12 +449,12 @@ func (dc *decoder) rateLimit(n *yamlparse.Node, path string, allowFalse bool) *R
 	}
 }
 
-func (dc *decoder) retry(n *yamlparse.Node, path string) *RawRetry {
+func (dc *decoder) retry(n *yamlparse.Node, path string) *rawRetry {
 	f := dc.fields(n, path, "attempts", "backoff", "initial_delay", "on")
 	if f == nil {
 		return nil
 	}
-	r := &RawRetry{
+	r := &rawRetry{
 		N: n, Path: path,
 		Attempts:     dc.intVal(f["attempts"], join(path, "attempts")),
 		Backoff:      dc.enumVal(f["backoff"], join(path, "backoff")),
@@ -471,12 +471,12 @@ func (dc *decoder) retry(n *yamlparse.Node, path string) *RawRetry {
 	return r
 }
 
-func (dc *decoder) healthCheck(n *yamlparse.Node, path string) *RawHealthCheck {
+func (dc *decoder) healthCheck(n *yamlparse.Node, path string) *rawHealthCheck {
 	f := dc.fields(n, path, "path", "interval", "unhealthy_threshold")
 	if f == nil {
 		return nil
 	}
-	return &RawHealthCheck{
+	return &rawHealthCheck{
 		N: n, Path: path,
 		HCPath:             dc.strVal(f["path"], join(path, "path")),
 		Interval:           dc.durVal(f["interval"], join(path, "interval")),
@@ -484,12 +484,12 @@ func (dc *decoder) healthCheck(n *yamlparse.Node, path string) *RawHealthCheck {
 	}
 }
 
-func (dc *decoder) circuitBreaker(n *yamlparse.Node, path string) *RawCircuitBreaker {
+func (dc *decoder) circuitBreaker(n *yamlparse.Node, path string) *rawCircuitBreaker {
 	f := dc.fields(n, path, "threshold", "window", "cooldown")
 	if f == nil {
 		return nil
 	}
-	return &RawCircuitBreaker{
+	return &rawCircuitBreaker{
 		N: n, Path: path,
 		Threshold: dc.intVal(f["threshold"], join(path, "threshold")),
 		Window:    dc.durVal(f["window"], join(path, "window")),
@@ -497,12 +497,12 @@ func (dc *decoder) circuitBreaker(n *yamlparse.Node, path string) *RawCircuitBre
 	}
 }
 
-func (dc *decoder) auth(n *yamlparse.Node, path string) *RawAuth {
+func (dc *decoder) auth(n *yamlparse.Node, path string) *rawAuth {
 	f := dc.fields(n, path, "type", "header", "keys")
 	if f == nil {
 		return nil
 	}
-	a := &RawAuth{
+	a := &rawAuth{
 		N: n, Path: path,
 		Type:   dc.enumVal(f["type"], join(path, "type")),
 		Header: dc.strVal(f["header"], join(path, "header")),
@@ -518,12 +518,12 @@ func (dc *decoder) auth(n *yamlparse.Node, path string) *RawAuth {
 	return a
 }
 
-func (dc *decoder) transform(n *yamlparse.Node, path string, request bool) *RawTransform {
+func (dc *decoder) transform(n *yamlparse.Node, path string, request bool) *rawTransform {
 	f := dc.fields(n, path, "headers", "body")
 	if f == nil {
 		return nil
 	}
-	t := &RawTransform{N: n, Path: path, Request: request}
+	t := &rawTransform{N: n, Path: path, Request: request}
 	if hn := f["headers"]; hn != nil {
 		hpath := join(path, "headers")
 		if hf := dc.fields(hn, hpath, "add", "remove"); hf != nil {
@@ -559,21 +559,21 @@ func (dc *decoder) transform(n *yamlparse.Node, path string, request bool) *RawT
 	return t
 }
 
-func (dc *decoder) stringMap(n *yamlparse.Node, path string) []*RawHeader {
+func (dc *decoder) stringMap(n *yamlparse.Node, path string) []*rawHeader {
 	if n.Kind != yamlparse.Map {
 		dc.d.Errorf(n, path, "expected a map, got %s", kindName(n))
 		return nil
 	}
-	var out []*RawHeader
+	var out []*rawHeader
 	for _, k := range n.Keys {
 		v := n.Map[k]
 		p := join(path, k)
-		if IsNull(v) {
+		if isNull(v) {
 			dc.d.Errorf(keyNode(n, k, v), p, "expected a string value")
 			continue
 		}
 		if s := dc.strVal(v, p); s != nil {
-			out = append(out, &RawHeader{Name: k, Key: keyNode(n, k, v), Value: s})
+			out = append(out, &rawHeader{Name: k, Key: keyNode(n, k, v), Value: s})
 		}
 	}
 	return out

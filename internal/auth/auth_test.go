@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 func TestDefaultHeader(t *testing.T) {
@@ -39,17 +39,17 @@ func TestCustomHeader(t *testing.T) {
 	if err := a.Check(h); err != nil {
 		t.Fatalf("custom header: %v", err)
 	}
-	if err := a.Check(http.Header{"X-Api-Key": {"k1"}}); !errors.Is(err, contract.ErrMissingAPIKey) {
+	if err := a.Check(http.Header{"X-Api-Key": {"k1"}}); !errors.Is(err, ErrMissingAPIKey) {
 		t.Fatalf("missing custom header: %v", err)
 	}
 }
 
 func TestMissing(t *testing.T) {
 	a := NewAPIKey("", []string{"k1"})
-	if err := a.Check(http.Header{}); !errors.Is(err, contract.ErrMissingAPIKey) {
+	if err := a.Check(http.Header{}); !errors.Is(err, ErrMissingAPIKey) {
 		t.Fatalf("got %v", err)
 	}
-	if err := a.Check(nil); !errors.Is(err, contract.ErrMissingAPIKey) {
+	if err := a.Check(nil); !errors.Is(err, ErrMissingAPIKey) {
 		t.Fatalf("nil header: %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestInvalid(t *testing.T) {
 	a := NewAPIKey("", []string{"sk_live_abc123"})
 	for _, v := range []string{"sk_live_wrong", "sk_live_abc12", "sk_live_abc1234", "SK_LIVE_ABC123", ""} {
 		h := http.Header{"X-Api-Key": {v}}
-		if err := a.Check(h); !errors.Is(err, contract.ErrInvalidAPIKey) {
+		if err := a.Check(h); !errors.Is(err, ErrInvalidAPIKey) {
 			t.Fatalf("%q: got %v", v, err)
 		}
 	}
@@ -68,11 +68,11 @@ func TestFromConfig(t *testing.T) {
 	if FromConfig(nil) != nil {
 		t.Fatal("nil config should give nil")
 	}
-	a := FromConfig(&contract.Auth{Type: contract.AuthTypeAPIKey, Header: "x-api-key", Keys: []string{"k"}})
+	a := FromConfig(&config.Auth{Type: config.AuthTypeAPIKey, Header: "x-api-key", Keys: []string{"k"}})
 	if err := a.Check(http.Header{"X-Api-Key": {"k"}}); err != nil {
 		t.Fatalf("valid: %v", err)
 	}
-	deny := FromConfig(&contract.Auth{Type: "bearer", Keys: []string{"k"}})
+	deny := FromConfig(&config.Auth{Type: "bearer", Keys: []string{"k"}})
 	if err := deny.Check(http.Header{"X-Api-Key": {"k"}}); err == nil {
 		t.Fatal("unknown type must reject")
 	}

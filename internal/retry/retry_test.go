@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/proxy"
 )
 
 func on(codes ...int) map[int]bool {
@@ -17,7 +18,7 @@ func on(codes ...int) map[int]bool {
 }
 
 func TestExponentialDelays(t *testing.T) {
-	p := New(&contract.Retry{Attempts: 4, Backoff: contract.BackoffExponential, InitialDelay: time.Second, On: on(503)})
+	p := New(&config.Retry{Attempts: 4, Backoff: config.BackoffExponential, InitialDelay: time.Second, On: on(503)})
 	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
 	for i, w := range want {
 		if got := p.Delay(i + 1); got != w {
@@ -33,20 +34,20 @@ func TestExponentialDelays(t *testing.T) {
 }
 
 func TestFixedDelays(t *testing.T) {
-	p := New(&contract.Retry{Attempts: 3, Backoff: contract.BackoffFixed, InitialDelay: 100 * time.Millisecond, On: on(500)})
+	p := New(&config.Retry{Attempts: 3, Backoff: config.BackoffFixed, InitialDelay: 100 * time.Millisecond, On: on(500)})
 	for a := 1; a <= 3; a++ {
 		if got := p.Delay(a); got != 100*time.Millisecond {
 			t.Fatalf("Delay(%d) = %v", a, got)
 		}
 	}
-	z := New(&contract.Retry{Attempts: 3, Backoff: contract.BackoffExponential, On: on(500)})
+	z := New(&config.Retry{Attempts: 3, Backoff: config.BackoffExponential, On: on(500)})
 	if z.Delay(2) != 0 {
 		t.Fatal("zero initial delay should give 0")
 	}
 }
 
 func TestAttemptsBound(t *testing.T) {
-	p := New(&contract.Retry{Attempts: 3, On: on(503)})
+	p := New(&config.Retry{Attempts: 3, On: on(503)})
 	tries := 1
 	for p.ShouldRetry(503, tries) {
 		tries++
@@ -54,18 +55,18 @@ func TestAttemptsBound(t *testing.T) {
 	if tries != 3 {
 		t.Fatalf("tries %d", tries)
 	}
-	one := New(&contract.Retry{Attempts: 1, On: on(503)})
+	one := New(&config.Retry{Attempts: 1, On: on(503)})
 	if one.ShouldRetry(503, 1) {
 		t.Fatal("attempts 1 must not retry")
 	}
 }
 
 func TestOnFiltering(t *testing.T) {
-	p := New(&contract.Retry{Attempts: 3, On: on(502, 503, 504)})
+	p := New(&config.Retry{Attempts: 3, On: on(502, 503, 504)})
 	if p.ShouldRetry(500, 1) {
 		t.Fatal("500 not in on")
 	}
-	if !p.ShouldRetry(contract.Classify(nil, errRefused{}), 1) {
+	if !p.ShouldRetry(proxy.Classify(nil, errRefused{}), 1) {
 		t.Fatal("connection error stand-in 502 should retry")
 	}
 	if !p.ShouldRetry(http.StatusGatewayTimeout, 1) {
@@ -75,7 +76,7 @@ func TestOnFiltering(t *testing.T) {
 		t.Fatal("success and 4xx must not retry")
 	}
 
-	only500 := New(&contract.Retry{Attempts: 3, On: on(500)})
+	only500 := New(&config.Retry{Attempts: 3, On: on(500)})
 	if only500.ShouldRetry(http.StatusBadGateway, 1) {
 		t.Fatal("502 stand-in not in on")
 	}

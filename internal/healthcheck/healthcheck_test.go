@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 type fixedClock struct{ t time.Time }
@@ -88,24 +88,25 @@ func newUpstream(t *testing.T, status int) *upstream {
 	return u
 }
 
-func (u *upstream) target(t *testing.T) *contract.Target {
-	tg, err := contract.NewTarget(u.srv.URL, 1)
+func (u *upstream) target(t *testing.T) *config.Target {
+	tg, err := config.NewTarget(u.srv.URL, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tg
 }
 
-func deps(s *stepSleeper) contract.Deps {
-	return contract.Deps{Clock: fixedClock{time.Unix(1000, 0)}, Sleeper: s}
+// start runs Start on a fixed clock and s.
+func start(ctx context.Context, routes []*config.Route, s *stepSleeper) {
+	Start(ctx, routes, fixedClock{time.Unix(1000, 0)}, s, nil)
 }
 
-func hcRoute(threshold int, targets ...*contract.Target) *contract.Route {
-	return &contract.Route{
+func hcRoute(threshold int, targets ...*config.Target) *config.Route {
+	return &config.Route{
 		Path:        "/api/products",
 		Targets:     targets,
 		Timeout:     2 * time.Second,
-		HealthCheck: &contract.HealthCheck{Path: "/healthz", Interval: 30 * time.Second, UnhealthyThreshold: threshold},
+		HealthCheck: &config.HealthCheck{Path: "/healthz", Interval: 30 * time.Second, UnhealthyThreshold: threshold},
 	}
 }
 
@@ -114,7 +115,7 @@ func TestStartupRoundProbesEveryTarget(t *testing.T) {
 	s := newStepSleeper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	Start(ctx, []*contract.Route{hcRoute(3, a.target(t), b.target(t))}, deps(s))
+	start(ctx, []*config.Route{hcRoute(3, a.target(t), b.target(t))}, s)
 	if d := s.waitRound(t); d != 30*time.Second {
 		t.Fatalf("sleep %v want 30s", d)
 	}
@@ -135,7 +136,7 @@ func TestThresholdAndRecovery(t *testing.T) {
 	s := newStepSleeper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	Start(ctx, []*contract.Route{hcRoute(3, tg)}, deps(s))
+	start(ctx, []*config.Route{hcRoute(3, tg)}, s)
 
 	s.waitRound(t)
 	s.next(t)
@@ -170,7 +171,7 @@ func TestNon2xxAndRedirectFail(t *testing.T) {
 		tg := a.target(t)
 		s := newStepSleeper()
 		ctx, cancel := context.WithCancel(context.Background())
-		Start(ctx, []*contract.Route{hcRoute(1, tg)}, deps(s))
+		start(ctx, []*config.Route{hcRoute(1, tg)}, s)
 		s.waitRound(t)
 		if tg.Healthy() {
 			t.Fatalf("status %d counted as success", code)
@@ -186,7 +187,7 @@ func TestConnectionRefusedFails(t *testing.T) {
 	s := newStepSleeper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	Start(ctx, []*contract.Route{hcRoute(1, tg)}, deps(s))
+	start(ctx, []*config.Route{hcRoute(1, tg)}, s)
 	s.waitRound(t)
 	if tg.Healthy() {
 		t.Fatal("refused probe counted as success")
@@ -203,7 +204,7 @@ func TestProbeTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	begin := time.Now()
-	Start(ctx, []*contract.Route{r}, deps(s))
+	start(ctx, []*config.Route{r}, s)
 	s.waitRound(t)
 	if tg.Healthy() {
 		t.Fatal("timed out probe counted as success")
@@ -249,7 +250,7 @@ func TestRouteWithoutHealthCheckIsNotProbed(t *testing.T) {
 	s := newStepSleeper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	Start(ctx, []*contract.Route{{Path: "/plain", Targets: []*contract.Target{tg}}, nil}, deps(s))
+	start(ctx, []*config.Route{{Path: "/plain", Targets: []*config.Target{tg}}, nil}, s)
 	select {
 	case <-s.calls:
 		t.Fatal("route without health_check was probed")
@@ -264,7 +265,7 @@ func TestCancelStopsLoop(t *testing.T) {
 	a := newUpstream(t, 200)
 	s := newStepSleeper()
 	ctx, cancel := context.WithCancel(context.Background())
-	Start(ctx, []*contract.Route{hcRoute(3, a.target(t))}, deps(s))
+	start(ctx, []*config.Route{hcRoute(3, a.target(t))}, s)
 	s.waitRound(t)
 	cancel()
 	time.Sleep(50 * time.Millisecond)
@@ -279,7 +280,7 @@ func TestWaitSubtractsRoundDuration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	clk := &advClock{t: time.Unix(1000, 0), step: 3 * time.Second}
-	Start(ctx, []*contract.Route{hcRoute(3, a.target(t))}, contract.Deps{Clock: clk, Sleeper: s})
+	Start(ctx, []*config.Route{hcRoute(3, a.target(t))}, clk, s, nil)
 	if d := s.waitRound(t); d != 27*time.Second {
 		t.Fatalf("sleep %v want 27s", d)
 	}

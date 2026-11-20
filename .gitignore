@@ -13,4 +13,4 @@ go.work.sum
 .idea/
 .vscode/
 .DS_Store
-/mock-upstream/mockupstream
+/mock-upstream/mock-upstream

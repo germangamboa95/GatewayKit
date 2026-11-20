@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 var t0 = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -14,7 +14,7 @@ var t0 = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 func at(d time.Duration) time.Time { return t0.Add(d) }
 
 func newB(th int, window, cooldown time.Duration) *Breaker {
-	return NewBreaker(&contract.CircuitBreakerConfig{Threshold: th, Window: window, Cooldown: cooldown})
+	return New(&config.CircuitBreaker{Threshold: th, Window: window, Cooldown: cooldown})
 }
 
 func mustPass(t *testing.T, b *Breaker, now time.Time) {
@@ -167,20 +167,6 @@ func TestRecordWhileOpenIgnored(t *testing.T) {
 	b.Record(true, at(5*time.Second))
 	b.Record(false, at(5*time.Second))
 	mustReject(t, b, at(10*time.Second), 20)
-}
-
-func TestNilConfigPassThrough(t *testing.T) {
-	cb := New(nil)
-	for i := 0; i < 100; i++ {
-		cb.Record(false, at(0))
-	}
-	if ok, _ := cb.TryPass(at(0)); !ok {
-		t.Fatal("pass-through rejected")
-	}
-	cb.Release()
-	if _, ok := New(&contract.CircuitBreakerConfig{Threshold: 1}).(*Breaker); !ok {
-		t.Fatal("New with config should return *Breaker")
-	}
 }
 
 func TestCeilSeconds(t *testing.T) {

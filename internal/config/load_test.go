@@ -36,7 +36,7 @@ func TestLoadSampleMatchesFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Sample()
+	want := sample()
 	if !reflect.DeepEqual(cfg, want) {
 		for i := range want.Routes {
 			if !reflect.DeepEqual(cfg.Routes[i], want.Routes[i]) {

@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"strings"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
-// Diag collects errors and warnings, each formatted as
+// diag collects errors and warnings, each formatted as
 // file:line:col: field.path: message.
-type Diag struct {
+type diag struct {
 	File     string
 	Errors   []string
 	Warnings []string
 }
 
-func (d *Diag) format(n *yamlparse.Node, path, msg string) string {
+func (d *diag) format(n *yamlparse.Node, path, msg string) string {
 	line, col := 1, 1
 	if n != nil {
 		line, col = n.Line, n.Col
@@ -26,16 +26,16 @@ func (d *Diag) format(n *yamlparse.Node, path, msg string) string {
 	return fmt.Sprintf("%s:%d:%d: %s: %s", d.File, line, col, path, msg)
 }
 
-func (d *Diag) Errorf(n *yamlparse.Node, path, format string, args ...any) {
+func (d *diag) Errorf(n *yamlparse.Node, path, format string, args ...any) {
 	d.Errors = append(d.Errors, d.format(n, path, fmt.Sprintf(format, args...)))
 }
 
-func (d *Diag) Warnf(n *yamlparse.Node, path, format string, args ...any) {
+func (d *diag) Warnf(n *yamlparse.Node, path, format string, args ...any) {
 	d.Warnings = append(d.Warnings, d.format(n, path, fmt.Sprintf(format, args...)))
 }
 
 // Err returns nil when no errors were collected.
-func (d *Diag) Err() error {
+func (d *diag) Err() error {
 	if len(d.Errors) == 0 {
 		return nil
 	}

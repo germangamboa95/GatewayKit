@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 func loadSrc(t *testing.T, src string) ([]string, error) {
@@ -16,7 +16,7 @@ func loadSrc(t *testing.T, src string) ([]string, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, warns, err := LoadNode("gateway.yaml", root)
+	_, warns, err := loadNode("gateway.yaml", root)
 	return warns, err
 }
 

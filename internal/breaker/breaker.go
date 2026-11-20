@@ -5,17 +5,20 @@ import (
 	"sync"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
+// State is the breaker's position.
 type State int
 
+// Breaker states.
 const (
 	Closed State = iota
 	Open
 	HalfOpen
 )
 
+// String returns "closed", "open" or "half-open".
 func (s State) String() string {
 	switch s {
 	case Open:
@@ -25,8 +28,6 @@ func (s State) String() string {
 	}
 	return "closed"
 }
-
-var _ contract.CircuitBreaker = (*Breaker)(nil)
 
 // Breaker counts failures in a sliding window and admits one trial after cooldown.
 type Breaker struct {
@@ -43,16 +44,8 @@ type Breaker struct {
 	trialID  uint64
 }
 
-// New returns the breaker for cfg, or a pass-through when cfg is nil.
-func New(cfg *contract.CircuitBreakerConfig) contract.CircuitBreaker {
-	if cfg == nil {
-		return passThrough{}
-	}
-	return NewBreaker(cfg)
-}
-
-// NewBreaker returns a closed Breaker. cfg must not be nil.
-func NewBreaker(cfg *contract.CircuitBreakerConfig) *Breaker {
+// New returns a closed Breaker. cfg must not be nil.
+func New(cfg *config.CircuitBreaker) *Breaker {
 	th := cfg.Threshold
 	if th < 1 {
 		th = 1
@@ -195,9 +188,3 @@ func ceilSeconds(d time.Duration) int {
 	}
 	return s
 }
-
-type passThrough struct{}
-
-func (passThrough) TryPass(time.Time) (bool, int) { return true, 0 }
-func (passThrough) Record(bool, time.Time)        {}
-func (passThrough) Release()                      {}

@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"testing"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
-func route(path string, methods ...string) *contract.Route {
-	r := &contract.Route{Path: path}
+func route(path string, methods ...string) *config.Route {
+	r := &config.Route{Path: path}
 	if len(methods) == 0 {
-		methods = contract.DefaultMethods
+		methods = config.DefaultMethods
 	}
 	r.Methods = map[string]bool{}
 	for _, m := range methods {
@@ -23,7 +24,7 @@ func route(path string, methods ...string) *contract.Route {
 	return r
 }
 
-func errCode(t *testing.T, resp *contract.Response) string {
+func errCode(t *testing.T, resp *gateway.Response) string {
 	t.Helper()
 	var body map[string]any
 	if err := json.Unmarshal(resp.Body, &body); err != nil {
@@ -65,24 +66,24 @@ func TestMatches(t *testing.T) {
 }
 
 func TestResolve(t *testing.T) {
-	sample := []*contract.Route{
+	sample := []*config.Route{
 		route("/api/users", "GET", "POST"),
 		route("/api/orders", "GET", "POST", "PUT"),
 		route("/api/products", "GET"),
 		route("/api/legacy", "GET", "POST"),
 		route("/api/internal", "GET", "POST"),
 	}
-	variantB := []*contract.Route{
+	variantB := []*config.Route{
 		route("/v2/admin", "GET"),
 		route("/v2", "GET", "DELETE"),
 	}
-	nested := []*contract.Route{
+	nested := []*config.Route{
 		route("/api", "GET", "POST"),
 		route("/api/items", "GET"),
 	}
 	cases := []struct {
 		name         string
-		routes       []*contract.Route
+		routes       []*config.Route
 		method, path string
 		wantRoute    string
 		wantStatus   int
@@ -93,14 +94,14 @@ func TestResolve(t *testing.T) {
 		{"subpath", sample, "GET", "/api/users/42", "/api/users", 0, ""},
 		{"segment boundary miss", sample, "GET", "/api/usersX", "", 404, ""},
 		{"case sensitive", sample, "GET", "/API/users", "", 404, ""},
-		{"root catch-all", []*contract.Route{route("/")}, "GET", "/anything/at/all", "/", 0, ""},
+		{"root catch-all", []*config.Route{route("/")}, "GET", "/anything/at/all", "/", 0, ""},
 		{"longer prefix", variantB, "GET", "/v2/admin/x", "/v2/admin", 0, ""},
 		{"file order", variantB, "GET", "/v2/a", "/v2", 0, ""},
 		{"variant B boundary", variantB, "GET", "/v2x", "", 404, ""},
 		{"variant B 405", variantB, "POST", "/v2/a", "/v2", 405, "GET, DELETE"},
 		{"no fallback", nested, "POST", "/api/items", "/api/items", 405, "GET"},
-		{"head not implied", []*contract.Route{route("/a", "GET")}, "HEAD", "/a", "/a", 405, "GET"},
-		{"omitted methods", []*contract.Route{route("/a")}, "DELETE", "/a", "/a", 0, ""},
+		{"head not implied", []*config.Route{route("/a", "GET")}, "HEAD", "/a", "/a", 405, "GET"},
+		{"omitted methods", []*config.Route{route("/a")}, "DELETE", "/a", "/a", 0, ""},
 		{"empty routes", nil, "GET", "/anything", "", 404, ""},
 		{"lowercase request method", sample, "get", "/api/users", "/api/users", 405, "GET, POST"},
 	}
@@ -123,7 +124,7 @@ func TestResolve(t *testing.T) {
 			if resp == nil || resp.Status != c.wantStatus {
 				t.Fatalf("response = %+v, want status %d", resp, c.wantStatus)
 			}
-			wantCode := map[int]string{404: contract.CodeNotFound, 405: contract.CodeMethodNotAllowed}[c.wantStatus]
+			wantCode := map[int]string{404: gateway.CodeNotFound, 405: gateway.CodeMethodNotAllowed}[c.wantStatus]
 			if code := errCode(t, resp); code != wantCode {
 				t.Fatalf("error = %q, want %q", code, wantCode)
 			}
@@ -135,7 +136,7 @@ func TestResolve(t *testing.T) {
 }
 
 func TestAllowListFallbacks(t *testing.T) {
-	r := &contract.Route{Path: "/x"}
+	r := &config.Route{Path: "/x"}
 	if got := AllowList(r); len(got) != 7 || !Allowed(r, http.MethodOptions) {
 		t.Fatalf("no methods: %v", got)
 	}

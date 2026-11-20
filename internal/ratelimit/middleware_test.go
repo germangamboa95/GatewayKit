@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/auth"
+	"github.com/germangamboa95/gatewaykit/internal/config"
+	"github.com/germangamboa95/gatewaykit/internal/gateway"
 )
 
 type fakeClock struct{ t time.Time }
@@ -17,33 +19,29 @@ func (c *fakeClock) Now() time.Time { return c.t }
 
 type counter struct{ n int }
 
-func (c *counter) handler(ctx *contract.RequestContext) *contract.Response {
+func (c *counter) handler(rc *gateway.RequestContext) *gateway.Response {
 	c.n++
-	return &contract.Response{Status: 200, Header: http.Header{"X-Up": {"1"}}, Body: []byte("ok"), FromUpstream: true}
+	return &gateway.Response{Status: 200, Header: http.Header{"X-Up": {"1"}}, Body: []byte("ok"), FromUpstream: true}
 }
 
-func route(rlc *contract.RateLimit) *contract.Route {
-	return &contract.Route{Path: "/api", RateLimit: rlc}
-}
-
-func reqFrom(addr string, xff string) *contract.RequestContext {
+func reqFrom(addr string, xff string) *gateway.RequestContext {
 	r := httptest.NewRequest("GET", "/api", nil)
 	r.RemoteAddr = addr
 	if xff != "" {
 		r.Header.Set("X-Forwarded-For", xff)
 	}
-	return &contract.RequestContext{Req: r, ClientIP: "9.9.9.9"}
+	return &gateway.RequestContext{Req: r, ClientIP: "9.9.9.9"}
 }
 
-func build(rlc *contract.RateLimit, clk *fakeClock) (contract.Handler, *counter) {
+func build(rlc *config.RateLimit, clk *fakeClock) (gateway.Handler, *counter) {
 	c := &counter{}
-	h := New(route(rlc), contract.Deps{Clock: clk})(c.handler)
+	h := Middleware(rlc, clk)(c.handler)
 	return h, c
 }
 
 func TestAllowedHeaders(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000003, 0)}
-	h, c := build(&contract.RateLimit{Requests: 30, Window: 60 * time.Second, Strategy: contract.StrategySlidingWindow, Per: contract.PerIP}, clk)
+	h, c := build(&config.RateLimit{Requests: 30, Window: 60 * time.Second, Strategy: config.StrategySlidingWindow, Per: config.PerIP}, clk)
 	resp := h(reqFrom("1.2.3.4:5555", ""))
 	if resp.Status != 200 || c.n != 1 || !resp.FromUpstream {
 		t.Fatalf("status %d hits %d", resp.Status, c.n)
@@ -61,7 +59,7 @@ func TestAllowedHeaders(t *testing.T) {
 
 func TestFixedResetHeader(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000003, 0)}
-	h, _ := build(&contract.RateLimit{Requests: 10, Window: 10 * time.Second, Strategy: contract.StrategyFixedWindow, Per: contract.PerIP}, clk)
+	h, _ := build(&config.RateLimit{Requests: 10, Window: 10 * time.Second, Strategy: config.StrategyFixedWindow, Per: config.PerIP}, clk)
 	resp := h(reqFrom("1.2.3.4:5555", ""))
 	if got := resp.Header.Get("X-RateLimit-Reset"); got != "1000010" {
 		t.Fatalf("reset %q", got)
@@ -70,7 +68,7 @@ func TestFixedResetHeader(t *testing.T) {
 
 func TestRejection(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	h, c := build(&contract.RateLimit{Requests: 10, Window: 10 * time.Second, Strategy: contract.StrategyFixedWindow, Per: contract.PerIP}, clk)
+	h, c := build(&config.RateLimit{Requests: 10, Window: 10 * time.Second, Strategy: config.StrategyFixedWindow, Per: config.PerIP}, clk)
 	for range 10 {
 		h(reqFrom("1.2.3.4:5555", ""))
 	}
@@ -106,7 +104,7 @@ func TestRejection(t *testing.T) {
 
 func TestXForwardedForIgnored(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	h, _ := build(&contract.RateLimit{Requests: 2, Window: time.Second, Per: contract.PerIP}, clk)
+	h, _ := build(&config.RateLimit{Requests: 2, Window: time.Second, Per: config.PerIP}, clk)
 	h(reqFrom("1.2.3.4:1", ""))
 	h(reqFrom("1.2.3.4:2", ""))
 	if resp := h(reqFrom("1.2.3.4:3", "5.6.7.8")); resp.Status != 429 {
@@ -117,9 +115,9 @@ func TestXForwardedForIgnored(t *testing.T) {
 	}
 }
 
-func TestGlobalBucket(t *testing.T) {
+func TestMiddlewareGlobalBucket(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	h, _ := build(&contract.RateLimit{Requests: 2, Window: time.Second, Per: contract.PerGlobal}, clk)
+	h, _ := build(&config.RateLimit{Requests: 2, Window: time.Second, Per: config.PerGlobal}, clk)
 	h(reqFrom("1.1.1.1:1", ""))
 	h(reqFrom("2.2.2.2:1", ""))
 	if resp := h(reqFrom("1.1.1.1:1", "")); resp.Status != 429 {
@@ -129,7 +127,7 @@ func TestGlobalBucket(t *testing.T) {
 
 func TestPerRouteBuckets(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	cfg := &contract.RateLimit{Requests: 100, Window: time.Minute, Per: contract.PerIP}
+	cfg := &config.RateLimit{Requests: 100, Window: time.Minute, Per: config.PerIP}
 	a, _ := build(cfg, clk)
 	b, _ := build(cfg, clk)
 	for range 100 {
@@ -144,9 +142,9 @@ func TestPerRouteBuckets(t *testing.T) {
 }
 
 func TestDisabled(t *testing.T) {
-	for _, r := range []*contract.Route{nil, route(nil)} {
+	for _, rl := range []*config.RateLimit{nil, {Requests: 0, Window: time.Minute}} {
 		c := &counter{}
-		h := New(r, contract.Deps{})(c.handler)
+		h := Middleware(rl, nil)(c.handler)
 		for range 5 {
 			resp := h(reqFrom("1.1.1.1:1", ""))
 			if resp.Status != 200 {
@@ -166,9 +164,9 @@ func TestDisabled(t *testing.T) {
 
 func TestHeadersOnGatewayErrors(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	h := New(route(&contract.RateLimit{Requests: 2, Window: time.Minute}), contract.Deps{Clock: clk})(
-		func(*contract.RequestContext) *contract.Response {
-			return contract.Unauthorized(contract.ErrInvalidAPIKey)
+	h := Middleware(&config.RateLimit{Requests: 2, Window: time.Minute}, clk)(
+		func(*gateway.RequestContext) *gateway.Response {
+			return auth.Unauthorized(auth.ErrInvalidAPIKey)
 		})
 	r1 := h(reqFrom("1.1.1.1:1", ""))
 	r2 := h(reqFrom("1.1.1.1:1", ""))
@@ -183,24 +181,24 @@ func TestHeadersOnGatewayErrors(t *testing.T) {
 
 func TestNilHeaderAndNilResponse(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	mw := New(route(&contract.RateLimit{Requests: 5, Window: time.Minute}), contract.Deps{Clock: clk})
-	resp := mw(func(*contract.RequestContext) *contract.Response { return &contract.Response{Status: 204} })(reqFrom("1.1.1.1:1", ""))
+	mw := Middleware(&config.RateLimit{Requests: 5, Window: time.Minute}, clk)
+	resp := mw(func(*gateway.RequestContext) *gateway.Response { return &gateway.Response{Status: 204} })(reqFrom("1.1.1.1:1", ""))
 	if resp.Header.Get("X-RateLimit-Remaining") != "4" {
 		t.Fatalf("headers %v", resp.Header)
 	}
-	if mw(func(*contract.RequestContext) *contract.Response { return nil })(reqFrom("1.1.1.1:1", "")) != nil {
+	if mw(func(*gateway.RequestContext) *gateway.Response { return nil })(reqFrom("1.1.1.1:1", "")) != nil {
 		t.Fatal("nil response should pass through")
 	}
 }
 
 func TestClientIPFallback(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000000, 0)}
-	h, _ := build(&contract.RateLimit{Requests: 1, Window: time.Minute}, clk)
-	ctx := &contract.RequestContext{ClientIP: "3.3.3.3"}
-	if h(ctx).Status != 200 {
+	h, _ := build(&config.RateLimit{Requests: 1, Window: time.Minute}, clk)
+	rc := &gateway.RequestContext{ClientIP: "3.3.3.3"}
+	if h(rc).Status != 200 {
 		t.Fatal("first should pass")
 	}
-	if got := h(&contract.RequestContext{ClientIP: "3.3.3.3"}); got.Status != 429 {
+	if got := h(&gateway.RequestContext{ClientIP: "3.3.3.3"}); got.Status != 429 {
 		t.Fatalf("second got %d", got.Status)
 	}
 	if got := h(reqFrom("4.4.4.4:1", "")); got.Status != 200 {

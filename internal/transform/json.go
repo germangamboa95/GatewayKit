@@ -11,7 +11,7 @@ import (
 var ErrTrailingData = errors.New("unexpected data after JSON value")
 
 // DecodeJSON decodes exactly one JSON value with UseNumber. Trailing data
-// other than whitespace is an error (design D8).
+// other than whitespace is an error.
 func DecodeJSON(b []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()

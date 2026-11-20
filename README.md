@@ -61,7 +61,12 @@ The e2e stacks all publish the same ports, so only one can run at a time. The sc
 
 | Path | What |
 | --- | --- |
-| `main.go`, `internal/` | The gateway, with one package per concern (`router`, `proxy`, `ratelimit`, `auth`, `breaker`, `retry`, `transform`, …) |
+| `main.go` | Loads the config and wires each route's middleware chain |
+| `internal/config` | Loads and validates `gateway.yaml` into the route model |
+| `internal/gateway` | The pipeline types: request context, response, handler, middleware |
+| `internal/server`, `internal/router` | The root `http.Handler` and longest-prefix routing |
+| `internal/auth`, `internal/ratelimit`, `internal/transform` | Per-route middleware |
+| `internal/upstream`, `internal/proxy`, `internal/balance`, `internal/breaker`, `internal/retry`, `internal/healthcheck` | Forwarding to targets |
 | `configs/` | The sample config and three test variants |
 | `mock-upstream/` | The mock service used by Compose. Its README covers the control headers |
 | `tests/` | The e2e suite |

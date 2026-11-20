@@ -1,4 +1,5 @@
-// Package healthcheck runs the background probe loop (F7).
+// Package healthcheck runs the background loop that probes each route's
+// targets and takes failing ones out of rotation.
 package healthcheck
 
 import (
@@ -11,7 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/clock"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 const (
@@ -28,39 +30,49 @@ var client = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-// Start probes every route with a HealthCheck until ctx is done. It returns immediately.
-func Start(ctx context.Context, routes []*contract.Route, deps contract.Deps) {
-	deps = deps.WithDefaults()
+// Start probes every route with a HealthCheck until ctx is done. It returns
+// immediately. A nil clk or sleeper means the system clock; a nil logger
+// means slog.Default().
+func Start(ctx context.Context, routes []*config.Route, clk clock.Clock, sleeper clock.Sleeper, logger *slog.Logger) {
+	if clk == nil {
+		clk = clock.System{}
+	}
+	if sleeper == nil {
+		sleeper = clock.System{}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	for _, r := range routes {
 		if r == nil || r.HealthCheck == nil || len(r.Targets) == 0 {
 			continue
 		}
-		go run(ctx, r, deps)
+		go run(ctx, r, clk, sleeper, logger)
 	}
 }
 
-func run(ctx context.Context, r *contract.Route, deps contract.Deps) {
+func run(ctx context.Context, r *config.Route, clk clock.Clock, sleeper clock.Sleeper, logger *slog.Logger) {
 	interval := r.HealthCheck.Interval
 	if interval <= 0 {
 		interval = defaultInterval
 	}
 	for {
-		start := deps.Clock.Now()
-		round(ctx, r, deps.Logger)
+		start := clk.Now()
+		round(ctx, r, logger)
 		if ctx.Err() != nil {
 			return
 		}
-		wait := interval - deps.Clock.Now().Sub(start)
+		wait := interval - clk.Now().Sub(start)
 		if wait < 0 {
 			wait = 0
 		}
-		if err := deps.Sleeper.Sleep(ctx, wait); err != nil || ctx.Err() != nil {
+		if err := sleeper.Sleep(ctx, wait); err != nil || ctx.Err() != nil {
 			return
 		}
 	}
 }
 
-func round(ctx context.Context, r *contract.Route, log *slog.Logger) {
+func round(ctx context.Context, r *config.Route, log *slog.Logger) {
 	hc := r.HealthCheck
 	timeout := probeTimeout(hc.Interval, r.Timeout)
 	threshold := hc.UnhealthyThreshold
@@ -73,7 +85,7 @@ func round(ctx context.Context, r *contract.Route, log *slog.Logger) {
 			continue
 		}
 		wg.Add(1)
-		go func(t *contract.Target) {
+		go func(t *config.Target) {
 			defer wg.Done()
 			u := probeURL(t.URL, hc.Path)
 			ok := probe(ctx, u, timeout)

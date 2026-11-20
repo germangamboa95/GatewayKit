@@ -1,24 +1,30 @@
-// Package auth implements API-key authentication.
+// Package auth implements API-key authentication and its middleware
+// (config spec §8).
 package auth
 
 import (
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strings"
 
-	"gatewaykit/internal/contract"
+	"github.com/germangamboa95/gatewaykit/internal/config"
 )
 
 // DefaultHeader is the header used when the config sets none.
 const DefaultHeader = "X-API-Key"
 
-// APIKey checks a header against a fixed key set. It implements contract.Authenticator.
+// Errors returned by Check.
+var (
+	ErrMissingAPIKey = errors.New("missing API key")
+	ErrInvalidAPIKey = errors.New("invalid API key")
+)
+
+// APIKey checks a header against a fixed key set.
 type APIKey struct {
 	header string
 	keys   [][]byte
 }
-
-var _ contract.Authenticator = (*APIKey)(nil)
 
 // NewAPIKey returns an authenticator reading header (DefaultHeader when empty).
 func NewAPIKey(header string, keys []string) *APIKey {
@@ -36,11 +42,11 @@ func NewAPIKey(header string, keys []string) *APIKey {
 
 // FromConfig builds an authenticator for cfg. An unknown type yields one
 // that rejects every request, so auth never silently turns off.
-func FromConfig(cfg *contract.Auth) contract.Authenticator {
+func FromConfig(cfg *config.Auth) *APIKey {
 	if cfg == nil {
 		return nil
 	}
-	if cfg.Type != contract.AuthTypeAPIKey && cfg.Type != "" {
+	if cfg.Type != config.AuthTypeAPIKey && cfg.Type != "" {
 		return NewAPIKey(cfg.Header, nil)
 	}
 	return NewAPIKey(cfg.Header, cfg.Keys)
@@ -49,11 +55,11 @@ func FromConfig(cfg *contract.Auth) contract.Authenticator {
 // Header returns the configured header name.
 func (a *APIKey) Header() string { return a.header }
 
-// Check returns nil, contract.ErrMissingAPIKey or contract.ErrInvalidAPIKey.
+// Check returns nil, ErrMissingAPIKey or ErrInvalidAPIKey.
 func (a *APIKey) Check(h http.Header) error {
 	v, ok := lookup(h, a.header)
 	if !ok {
-		return contract.ErrMissingAPIKey
+		return ErrMissingAPIKey
 	}
 	got := []byte(v)
 	match := 0
@@ -61,7 +67,7 @@ func (a *APIKey) Check(h http.Header) error {
 		match |= subtle.ConstantTimeCompare(got, k)
 	}
 	if match != 1 {
-		return contract.ErrInvalidAPIKey
+		return ErrInvalidAPIKey
 	}
 	return nil
 }

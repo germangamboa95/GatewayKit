@@ -5,8 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"gatewaykit/internal/contract"
-	"gatewaykit/internal/yamlparse"
+	"github.com/germangamboa95/gatewaykit/internal/yamlparse"
 )
 
 const (
@@ -34,15 +33,15 @@ func isManaged(name string) bool {
 	return managedHeaders[n] || strings.HasPrefix(n, "proxy-")
 }
 
-// Normalize fills defaults, merges rate limits, builds targets and compiles
+// normalize fills defaults, merges rate limits, builds targets and compiles
 // transforms. Compile errors and transform warnings go to d. It tolerates a
 // raw config that failed validation; callers must check d before using the
 // result.
-func Normalize(raw *Raw, d *Diag) *contract.GatewayConfig {
+func normalize(raw *rawConfig, d *diag) *Gateway {
 	if raw == nil {
 		return nil
 	}
-	cfg := &contract.GatewayConfig{Port: DefaultPort, Routes: []*contract.Route{}}
+	cfg := &Gateway{Port: DefaultPort, Routes: []*Route{}}
 	if raw.Port != nil {
 		cfg.Port = raw.Port.V
 	}
@@ -56,12 +55,12 @@ func Normalize(raw *Raw, d *Diag) *contract.GatewayConfig {
 	return cfg
 }
 
-func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *contract.Route {
-	r := &contract.Route{Balance: contract.BalanceRoundRobin, Timeout: global, Methods: map[string]bool{}}
+func normalizeRoute(rr *rawRoute, raw *rawConfig, global time.Duration, d *diag) *Route {
+	r := &Route{Balance: BalanceRoundRobin, Timeout: global, Methods: map[string]bool{}}
 	if rr.RoutePath != nil {
-		r.Path = NormalizePath(rr.RoutePath.V)
+		r.Path = normalizePath(rr.RoutePath.V)
 	}
-	methods := contract.DefaultMethods
+	methods := DefaultMethods
 	if rr.MethodsNode != nil {
 		methods = nil
 		for _, m := range rr.Methods {
@@ -79,10 +78,10 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 	}
 	if u := rr.Upstream; u != nil {
 		if u.Balance != nil {
-			r.Balance = u.Balance.V
+			r.Balance = Balance(u.Balance.V)
 		}
 		if u.URL != nil {
-			if t, err := contract.NewTarget(u.URL.V, 1); err == nil {
+			if t, err := NewTarget(u.URL.V, 1); err == nil {
 				r.Targets = append(r.Targets, t)
 			}
 		}
@@ -94,7 +93,7 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 			if rt.URL == nil {
 				continue
 			}
-			if t, err := contract.NewTarget(rt.URL.V, w); err == nil {
+			if t, err := NewTarget(rt.URL.V, w); err == nil {
 				r.Targets = append(r.Targets, t)
 			}
 		}
@@ -103,12 +102,12 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 		r.Timeout = rr.Timeout.V
 	}
 	if rt := rr.Retry; rt != nil {
-		x := &contract.Retry{Backoff: contract.BackoffFixed, InitialDelay: DefaultRetryDelay, On: map[int]bool{}}
+		x := &Retry{Backoff: BackoffFixed, InitialDelay: DefaultRetryDelay, On: map[int]bool{}}
 		if rt.Attempts != nil {
 			x.Attempts = rt.Attempts.V
 		}
 		if rt.Backoff != nil {
-			x.Backoff = rt.Backoff.V
+			x.Backoff = Backoff(rt.Backoff.V)
 		}
 		if rt.InitialDelay != nil {
 			x.InitialDelay = rt.InitialDelay.V
@@ -125,7 +124,7 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 		r.Retry = x
 	}
 	if hc := rr.HealthCheck; hc != nil {
-		x := &contract.HealthCheck{Interval: DefaultHCInterval, UnhealthyThreshold: DefaultHCThreshold}
+		x := &HealthCheck{Interval: DefaultHCInterval, UnhealthyThreshold: DefaultHCThreshold}
 		if hc.HCPath != nil {
 			x.Path = hc.HCPath.V
 		}
@@ -138,7 +137,7 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 		r.HealthCheck = x
 	}
 	if cb := rr.CircuitBreaker; cb != nil {
-		x := &contract.CircuitBreakerConfig{Window: DefaultCBWindow, Cooldown: DefaultCBCooldown}
+		x := &CircuitBreaker{Window: DefaultCBWindow, Cooldown: DefaultCBCooldown}
 		if cb.Threshold != nil {
 			x.Threshold = cb.Threshold.V
 		}
@@ -152,9 +151,9 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 	}
 	r.RateLimit = mergeRateLimit(rr.RateLimit, raw.GlobalRateLimit)
 	if a := rr.Auth; a != nil {
-		x := &contract.Auth{Type: contract.AuthTypeAPIKey, Header: strings.ToLower(DefaultAuthHeader)}
+		x := &Auth{Type: AuthTypeAPIKey, Header: strings.ToLower(DefaultAuthHeader)}
 		if a.Type != nil {
-			x.Type = a.Type.V
+			x.Type = AuthType(a.Type.V)
 		}
 		if a.Header != nil {
 			x.Header = strings.ToLower(a.Header.V)
@@ -166,7 +165,7 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 	}
 	if t := rr.ReqTransform; t != nil {
 		add, remove := compileHeaders(t, d)
-		x := &contract.ReqTransform{AddHeaders: add, RemoveHeaders: remove}
+		x := &ReqTransform{AddHeaders: add, RemoveHeaders: remove}
 		if t.MappingNode != nil {
 			x.Mapping = compileMapping(t, d)
 		}
@@ -174,7 +173,7 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 	}
 	if t := rr.RespTransform; t != nil {
 		add, remove := compileHeaders(t, d)
-		x := &contract.RespTransform{AddHeaders: add, RemoveHeaders: remove}
+		x := &RespTransform{AddHeaders: add, RemoveHeaders: remove}
 		if t.Envelope != nil {
 			x.Envelope = compileTemplate(t.Envelope, t.EnvelopePath, d)
 		}
@@ -183,12 +182,12 @@ func normalizeRoute(rr *RawRoute, raw *Raw, global time.Duration, d *Diag) *cont
 	return r
 }
 
-func mergeRateLimit(rl, g *RawRateLimit) *contract.RateLimit {
+func mergeRateLimit(rl, g *rawRateLimit) *RateLimit {
 	if rl != nil && rl.Disabled || rl == nil && g == nil {
 		return nil
 	}
-	x := &contract.RateLimit{Strategy: contract.StrategyFixedWindow, Per: contract.PerIP}
-	for _, src := range []*RawRateLimit{g, rl} {
+	x := &RateLimit{Strategy: StrategyFixedWindow, Per: PerIP}
+	for _, src := range []*rawRateLimit{g, rl} {
 		if src == nil {
 			continue
 		}
@@ -199,35 +198,35 @@ func mergeRateLimit(rl, g *RawRateLimit) *contract.RateLimit {
 			x.Window = src.Window.V
 		}
 		if src.Strategy != nil {
-			x.Strategy = src.Strategy.V
+			x.Strategy = Strategy(src.Strategy.V)
 		}
 		if src.Per != nil {
-			x.Per = src.Per.V
+			x.Per = Per(src.Per.V)
 		}
 	}
 	return x
 }
 
 // compileVar parses a transform value and checks where it may appear.
-func compileVar(s *Str, request, envelope bool, d *Diag) (contract.Var, bool) {
-	v, err := contract.ParseVar(s.V)
+func compileVar(s *rawStr, request, envelope bool, d *diag) (Var, bool) {
+	v, err := ParseVar(s.V)
 	if err != nil {
 		d.Errorf(s.N, s.Path, "%s", err.Error())
 		return v, false
 	}
 	switch {
-	case v.Kind == contract.VarResponseTime && request:
+	case v.Kind == VarResponseTime && request:
 		d.Errorf(s.N, s.Path, "%q is not allowed in a request transform", s.V)
 		return v, false
-	case v.Kind == contract.VarBody && !envelope:
+	case v.Kind == VarBody && !envelope:
 		d.Errorf(s.N, s.Path, "%q is only allowed in response_transform.body.envelope", s.V)
 		return v, false
 	}
 	return v, true
 }
 
-func compileHeaders(t *RawTransform, d *Diag) ([]contract.HeaderAdd, []string) {
-	var add []contract.HeaderAdd
+func compileHeaders(t *rawTransform, d *diag) ([]HeaderAdd, []string) {
+	var add []HeaderAdd
 	var remove []string
 	for _, h := range t.Add {
 		v, ok := compileVar(h.Value, t.Request, false, d)
@@ -236,7 +235,7 @@ func compileHeaders(t *RawTransform, d *Diag) ([]contract.HeaderAdd, []string) {
 			continue
 		}
 		if ok {
-			add = append(add, contract.HeaderAdd{Name: strings.ToLower(h.Name), Value: v})
+			add = append(add, HeaderAdd{Name: strings.ToLower(h.Name), Value: v})
 		}
 	}
 	for _, s := range t.Remove {
@@ -249,8 +248,8 @@ func compileHeaders(t *RawTransform, d *Diag) ([]contract.HeaderAdd, []string) {
 	return add, remove
 }
 
-func compileMapping(t *RawTransform, d *Diag) *contract.Mapping {
-	m := &contract.Mapping{}
+func compileMapping(t *rawTransform, d *diag) *Mapping {
+	m := &Mapping{}
 	for _, h := range t.Mapping {
 		dest := strings.Split(h.Name, ".")
 		if hasEmpty(dest) {
@@ -268,7 +267,7 @@ func compileMapping(t *RawTransform, d *Diag) *contract.Mapping {
 		if conflict {
 			continue
 		}
-		e := contract.MappingEntry{Dest: dest}
+		e := MappingEntry{Dest: dest}
 		if strings.HasPrefix(h.Value.V, "$") {
 			v, ok := compileVar(h.Value, true, false, d)
 			if !ok {
@@ -308,29 +307,29 @@ func isPrefix(a, b []string) bool {
 	return true
 }
 
-func compileTemplate(n *yamlparse.Node, path string, d *Diag) *contract.Template {
+func compileTemplate(n *yamlparse.Node, path string, d *diag) *Template {
 	switch n.Kind {
 	case yamlparse.Map:
-		t := &contract.Template{Kind: contract.TemplateObject}
+		t := &Template{Kind: TemplateObject}
 		for _, k := range n.Keys {
-			t.Fields = append(t.Fields, contract.TemplateField{Key: k, Value: compileTemplate(n.Map[k], join(path, k), d)})
+			t.Fields = append(t.Fields, TemplateField{Key: k, Value: compileTemplate(n.Map[k], join(path, k), d)})
 		}
 		return t
 	case yamlparse.Seq:
-		t := &contract.Template{Kind: contract.TemplateArray}
+		t := &Template{Kind: TemplateArray}
 		for i, it := range n.Items {
 			t.Items = append(t.Items, compileTemplate(it, idx(path, i), d))
 		}
 		return t
 	}
-	if IsNull(n) {
-		return &contract.Template{Kind: contract.TemplateScalar, Raw: "null"}
+	if isNull(n) {
+		return &Template{Kind: TemplateScalar, Raw: "null"}
 	}
 	if !n.Quoted && isJSONScalar(n.Value) {
-		return &contract.Template{Kind: contract.TemplateScalar, Raw: n.Value}
+		return &Template{Kind: TemplateScalar, Raw: n.Value}
 	}
-	v, _ := compileVar(&Str{V: n.Value, N: n, Path: path}, false, true, d)
-	return &contract.Template{Kind: contract.TemplateVar, Var: v}
+	v, _ := compileVar(&rawStr{V: n.Value, N: n, Path: path}, false, true, d)
+	return &Template{Kind: TemplateVar, Var: v}
 }
 
 func isJSONScalar(s string) bool {
