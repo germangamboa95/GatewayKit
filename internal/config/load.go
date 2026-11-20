@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gatewaykit/internal/contract"
 	"gatewaykit/internal/yamlparse"
@@ -16,11 +17,12 @@ func Load(path string) (*contract.GatewayConfig, []string, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("config: %w", err)
 	}
+	name := filepath.Clean(path)
 	root, err := yamlparse.ParseYAML(src)
 	if err != nil {
-		return nil, nil, &LoadError{File: path, Problems: []string{fmt.Sprintf("%s:%s", path, err.Error())}}
+		return nil, nil, &LoadError{File: name, Problems: []string{fmt.Sprintf("%s:%s", name, err.Error())}}
 	}
-	return LoadNode(path, root)
+	return LoadNode(name, root)
 }
 
 // LoadNode runs decode, validate and normalize on a parsed tree.

@@ -38,6 +38,14 @@ type Node struct {
 	Items  []*Node
 	Line   int
 	Col    int
+	// KeyPos holds the position of each map key.
+	KeyPos map[string]Pos
+}
+
+// Pos is a 1-based line and column.
+type Pos struct {
+	Line int
+	Col  int
 }
 
 // Error is a parse error at a 1-based line and column.

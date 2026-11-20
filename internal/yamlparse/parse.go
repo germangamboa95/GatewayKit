@@ -226,7 +226,7 @@ func (p *parser) parseSeq(col int) (*Node, error) {
 
 func (p *parser) parseMap(col int) (*Node, error) {
 	first := p.line()
-	m := &Node{Kind: Map, Map: map[string]*Node{}, Line: first.num, Col: colOf(first, col)}
+	m := &Node{Kind: Map, Map: map[string]*Node{}, KeyPos: map[string]Pos{}, Line: first.num, Col: colOf(first, col)}
 	for !p.eof() {
 		ln := p.line()
 		c := p.off
@@ -279,6 +279,7 @@ func (p *parser) parseMap(col int) (*Node, error) {
 		}
 		m.Keys = append(m.Keys, key)
 		m.Map[key] = val
+		m.KeyPos[key] = Pos{Line: ln.num, Col: colOf(ln, c)}
 	}
 	return m, nil
 }
@@ -566,7 +567,7 @@ func parseFlow(ln *srcLine, off int) (*Node, int, error) {
 			}
 		}
 	}
-	n := &Node{Kind: Map, Map: map[string]*Node{}, Line: ln.num, Col: colOf(ln, off)}
+	n := &Node{Kind: Map, Map: map[string]*Node{}, KeyPos: map[string]Pos{}, Line: ln.num, Col: colOf(ln, off)}
 	j := off + 1
 	for {
 		j = skipWS(t, j)
@@ -625,6 +626,7 @@ func parseFlow(ln *srcLine, off int) (*Node, int, error) {
 		}
 		n.Keys = append(n.Keys, key)
 		n.Map[key] = val
+		n.KeyPos[key] = Pos{Line: ln.num, Col: colOf(ln, keyOff)}
 		if atFlowEnd(t, j) {
 			return nil, 0, unclosed(ln, off)
 		}

@@ -232,7 +232,7 @@ func compileHeaders(t *RawTransform, d *Diag) ([]contract.HeaderAdd, []string) {
 	for _, h := range t.Add {
 		v, ok := compileVar(h.Value, t.Request, false, d)
 		if isManaged(h.Name) {
-			d.Warnf(h.Value.N, h.Value.Path, "header %q is managed by the gateway; entry ignored", h.Name)
+			d.Warnf(h.Key, h.Value.Path, "header %q is managed by the gateway; entry ignored", h.Name)
 			continue
 		}
 		if ok {
@@ -254,13 +254,13 @@ func compileMapping(t *RawTransform, d *Diag) *contract.Mapping {
 	for _, h := range t.Mapping {
 		dest := strings.Split(h.Name, ".")
 		if hasEmpty(dest) {
-			d.Errorf(h.Value.N, h.Value.Path, "invalid destination path %q", h.Name)
+			d.Errorf(h.Key, h.Value.Path, "invalid destination path %q", h.Name)
 			continue
 		}
 		conflict := false
 		for _, e := range m.Entries {
 			if isPrefix(e.Dest, dest) || isPrefix(dest, e.Dest) {
-				d.Errorf(h.Value.N, h.Value.Path, "destination %q conflicts with %q", h.Name, strings.Join(e.Dest, "."))
+				d.Errorf(h.Key, h.Value.Path, "destination %q conflicts with %q", h.Name, strings.Join(e.Dest, "."))
 				conflict = true
 				break
 			}
