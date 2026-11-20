@@ -17,27 +17,8 @@ func TestIndentWidth(t *testing.T) {
 	}
 }
 
-func TestInconsistentIndent(t *testing.T) {
-	mustFail(t, "a:\n    b: 1\n  c: 2\n", 3, "indentation")
-	mustFail(t, "a:\n  b: 1\n   c: 2\n", 3, "")
-}
-
-func TestTabInIndent(t *testing.T) {
-	cases := []struct {
-		src  string
-		line int
-	}{
-		{"gateway:\n\tport: 8080\n", 2},
-		{"gateway:\n  \tport: 8080\n", 2},
-		{"a: 1\nb:\n  - x\n  -\ty\n", 4},
-	}
-	for _, c := range cases {
-		pe := mustFail(t, c.src, c.line, "tab")
-		if pe.Col < 1 {
-			t.Errorf("bad col %d", pe.Col)
-		}
-	}
-	if got := dump(mustParse(t, "a:\t1 \t# c\n\t\n"), false); got != `{"a": "1"}` {
+func TestTabSeparator(t *testing.T) {
+	if got := dump(mustParse(t, "a:\t1 \t# c\n"), false); got != `{"a": "1"}` {
 		t.Errorf("tab as separator: got %s", got)
 	}
 }
@@ -62,7 +43,6 @@ func TestComments(t *testing.T) {
 			t.Errorf("ParseYAML(%q) = %s, want %s", c.src, got, c.want)
 		}
 	}
-	mustFail(t, "a: \"x\"#c\n", 1, "unexpected content")
 }
 
 func TestDocumentMarkers(t *testing.T) {

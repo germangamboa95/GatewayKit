@@ -35,22 +35,19 @@ Duration pattern: `^\d+(\.\d+)?(ms|s|m|h)$`. A duration must be greater than zer
 
 ### Supported YAML
 
-GatewayKit parses YAML with its own parser, because Go's standard library has none and the build allows no outside modules. The parser handles the features below, which cover the sample config and any config written in the same style. Anything else stops startup with an error that gives the line number; it is never quietly misread.
+GatewayKit parses YAML with `gopkg.in/yaml.v3` and converts the result into a tree of strings, maps and lists. It adds these rules:
 
-| Supported | Notes |
+| Rule | Notes |
 | --- | --- |
-| Block mappings `key: value` | Indent with spaces; any width works as long as it's consistent. A tab in the indentation is an error |
-| Block sequences `- item` | Items can be scalars or mappings (`- path: "/x"` starts a mapping item). The `-` can sit at its parent key's indentation or deeper |
-| Flow sequences `[a, "b", 3]` and flow mappings `{ k: v }` | Can be nested, but must open and close on the same line |
-| Scalars | Plain; double-quoted with the escapes `\"`, `\\`, `\n`, `\t` and `\uXXXX`; single-quoted, where `''` means one `'` |
-| Comments | `#` at the start of a line or after whitespace, outside quotes |
-| Empty values | `key:` with nothing on the line or nested under it means null |
-| Keys | Any plain or quoted scalar, including dots and dashes (`user.id`, `X-Gateway`). A key repeated within one mapping is an error |
-| Document markers | A leading `---` and a trailing `...` are ignored |
+| One document per file | A second document (`---` after content) stops startup |
+| Keys are scalars | A map or list used as a key (`[a]: b`, `? {a: 1}`) is an error. A key repeated within one mapping is an error |
+| Aliases expand | `*name` becomes a copy of the anchored node, with the anchor's line and column. An alias inside the node it names is an error, and so is expansion past 100,000 nodes |
+| Merge keys | `<<: *base` or `<<: [*a, *b]` copies keys in. Keys written in the mapping win, then earlier maps in the list. The value must be a map or a list of maps |
+| Tags | Only `!!str` is allowed. Any other tag stops startup |
 
-**Not supported** (startup fails, naming the line): anchors and aliases (`&`, `*`, `<<`), tags (`!!str`), block scalars (`|`, `>`), more than one document in a file, complex keys (`?`), and plain or flow values that span several lines.
+**Error positions.** Errors from the rules above give `file:line:col`. yaml.v3 syntax errors give `file:line` only. yaml.v3 can report the line before the problem, and omits the line for some errors, such as problems on line 1, unknown anchors and invalid UTF-8.
 
-**Typing.** The parser returns only strings, maps and lists, and records whether each string was quoted. Types come from the schema when the config is decoded:
+**Typing.** The parser returns only strings, maps and lists, and records whether each string was quoted. Quotes, a block scalar (`|`, `>`) and `!!str` all count as quoted. Types come from the schema when the config is decoded:
 
 - An `int` field accepts `8080` or `"8080"`.
 - A `bool` field accepts only `true` or `false`. YAML 1.1 words like `yes`, `no`, `on` and `off` are rejected.

@@ -24,7 +24,7 @@ func TestFlowCollections(t *testing.T) {
 			`{"v": {"url": "http://localhost:3003"q@1:11}@1:4}@1:1`},
 		{"plain url value", `v: {url: http://h:1/p, w: 3}`,
 			`{"v": {"url": "http://h:1/p"@1:10, "w": "3"@1:27}@1:4}@1:1`},
-		{"null value", `v: {a: , b:}`,
+		{"null value", `v: {a: , b: }`,
 			`{"v": {"a": null@1:5, "b": null@1:10}@1:4}@1:1`},
 		{"null word", `v: [null, ~, "null"]`,
 			`{"v": [null@1:5, null@1:11, "null"q@1:14]@1:4}@1:1`},
@@ -38,6 +38,10 @@ func TestFlowCollections(t *testing.T) {
 			`{"v": ["a b"@1:6, "c"@1:12]@1:4}@1:1`},
 		{"hash without space", `v: [a#b]`,
 			`{"v": ["a#b"@1:5]@1:4}@1:1`},
+		{"spans lines", "v: [a,\n  b]\n",
+			`{"v": ["a"@1:5, "b"@2:3]@1:4}@1:1`},
+		{"map spans lines", "v: {\n  k: v }\n",
+			`{"v": {"k": "v"@2:6}@1:4}@1:1`},
 		{"envelope", `result: { payload: "$body", ok: true }`,
 			`{"result": {"payload": "$body"q@1:20, "ok": "true"@1:33}@1:9}@1:1`},
 	}
@@ -45,37 +49,6 @@ func TestFlowCollections(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := dump(mustParse(t, c.src), true); got != c.want {
 				t.Errorf("ParseYAML(%q)\n got %s\nwant %s", c.src, got, c.want)
-			}
-		})
-	}
-}
-
-func TestFlowErrors(t *testing.T) {
-	cases := []struct {
-		name, src string
-		line, col int
-		want      string
-	}{
-		{"seq spans lines", "a: 1\nv: [a,\n  b]\n", 2, 4, "not closed on this line"},
-		{"map spans lines", "v: {\n  k: v }\n", 1, 4, "not closed on this line"},
-		{"nested spans lines", "v: [a, {b: c\n", 1, 8, "not closed"},
-		{"comment inside", "v: [a, b # c ]\n", 1, 4, "not closed"},
-		{"string spans lines", "v: [\"a\n", 1, 5, "unterminated"},
-		{"missing comma", "v: [a b, \"c\" d]\n", 1, 14, "expected ',' or ']'"},
-		{"missing colon", "v: {a, b}\n", 1, 6, "expected ':'"},
-		{"duplicate flow key", "v: {a: 1, a: 2}\n", 1, 11, "duplicate key"},
-		{"pair in seq", "v: [a: 1]\n", 1, 6, "mappings inside flow sequences"},
-		{"empty entry", "v: [a, , b]\n", 1, 8, "unexpected ','"},
-		{"trailing content", "v: [a] b\n", 1, 8, "unexpected content"},
-		{"complex key", "[a]: b\n", 1, 1, "complex keys"},
-		{"flow map key", "v: {[a]: b}\n", 1, 5, "complex keys"},
-		{"block seq in flow", "v: [- a]\n", 1, 5, "block sequence"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			pe := mustFail(t, c.src, c.line, c.want)
-			if pe.Col != c.col {
-				t.Errorf("col %d, want %d (%v)", pe.Col, c.col, pe)
 			}
 		})
 	}

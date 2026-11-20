@@ -20,7 +20,11 @@ func Load(path string) (*contract.GatewayConfig, []string, error) {
 	name := filepath.Clean(path)
 	root, err := yamlparse.ParseYAML(src)
 	if err != nil {
-		return nil, nil, &LoadError{File: name, Problems: []string{fmt.Sprintf("%s:%s", name, err.Error())}}
+		sep := ":"
+		if pe, ok := err.(*yamlparse.Error); ok && pe.Line == 0 {
+			sep = ": "
+		}
+		return nil, nil, &LoadError{File: name, Problems: []string{name + sep + err.Error()}}
 	}
 	return LoadNode(name, root)
 }

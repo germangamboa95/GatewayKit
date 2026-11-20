@@ -1,6 +1,9 @@
 package yamlparse
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestBlockTrees(t *testing.T) {
 	cases := []struct{ name, src, want string }{
@@ -15,7 +18,7 @@ func TestBlockTrees(t *testing.T) {
 		{"seq of scalars", "k:\n  - a\n  - b\n",
 			`{"k": ["a"@2:5, "b"@3:5]@2:3}@1:1`},
 		{"root seq", "- a\n- b: 1\n  c: 2\n-\n- \n",
-			`["a"@1:3, {"b": "1"@2:6, "c": "2"@3:6}@2:3, null@4:1, null@5:1]@1:1`},
+			`["a"@1:3, {"b": "1"@2:6, "c": "2"@3:6}@2:3, null@4:2, null@5:2]@1:1`},
 		{"nested seq inline", "- - a\n  - b\n- c\n",
 			`[["a"@1:5, "b"@2:5]@1:3, "c"@3:3]@1:1`},
 		{"item block on next line", "-\n  a: 1\n- b\n",
@@ -66,31 +69,51 @@ func TestSeqIndentEquivalence(t *testing.T) {
 	}
 }
 
-func TestBlockErrors(t *testing.T) {
-	cases := []struct {
-		name, src string
-		line      int
-		want      string
-	}{
-		{"duplicate key", "port: 8080\nhost: x\nport: 9090\n", 3, `duplicate key "port"`},
-		{"duplicate nested key", "a:\n  b: 1\n  b: 2\n", 3, "duplicate key"},
-		{"duplicate quoted key", "a: 1\n\"a\": 2\n", 2, "duplicate key"},
-		{"seq entry in map", "a: 1\n- b\n", 2, "sequence entry"},
-		{"not a key", "a: 1\nb\n", 2, "mapping key"},
-		{"dash after key", "a: - b\n", 1, "same line"},
-		{"nested map on one line", "a: b: c\n", 1, "nested mapping"},
-		{"bad seq indent", "-\n    a: 1\n  b: 2\n", 3, "indentation"},
-		{"map under seq dedent", "- a: 1\n b: 2\n", 2, "indentation"},
-		{"trailing content after root", "a: 1\n  b: 2\n", 2, "multi-line"},
-		{"empty key", ": v\n", 1, "unexpected ':'"},
+func TestDuplicateKeys(t *testing.T) {
+	mustFailAt(t, "port: 8080\nhost: x\nport: 9090\n", 3, 1, `duplicate key "port"`)
+	mustFailAt(t, "a:\n  port: 1\n  port: 2\n", 3, 3, "duplicate key")
+	mustFailAt(t, "a: 1\n\"a\": 2\n", 2, 1, "duplicate key")
+	mustFailAt(t, "v: {a: 1, a: 2}\n", 1, 11, "duplicate key")
+}
+
+func TestComplexKeys(t *testing.T) {
+	mustFailAt(t, "[a]: b\n", 1, 1, "complex keys")
+	mustFailAt(t, "v: {[a]: b}\n", 1, 5, "complex keys")
+	mustFailAt(t, "? {a: 1}\n: v\n", 1, 3, "complex keys")
+	if got := dump(mustParse(t, "? key\n: value\n"), false); got != `{"key": "value"}` {
+		t.Errorf("explicit scalar key: got %s", got)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			mustFail(t, c.src, c.line, c.want)
-		})
+}
+
+// TestInvalidYAML checks that yaml.v3 syntax errors come back as *Error.
+// yaml.v3 reports a line but no column, and drops the line for errors on
+// line 1, so only the type and the line format are checked here.
+func TestInvalidYAML(t *testing.T) {
+	for _, src := range []string{
+		"a: 1\n- b\n",
+		"a: 1\nb\n",
+		"a: - b\n",
+		"a: b: c\n",
+		"a:\n    b: 1\n  c: 2\n",
+		"- a: 1\n b: 2\n",
+		"gateway:\n\tport: 8080\n",
+		"v: [a, {b: c\n",
+		"v: [a, , b]\n",
+		"v: \"abc\n",
+		"v: \"\\uzzzz\"\n",
+		"v: *missing\n",
+		"v: \"\x01\"\n",
+	} {
+		pe := mustFail(t, src, "")
+		want := pe.Msg
+		if pe.Line > 0 {
+			want = fmt.Sprintf("%d: %s", pe.Line, pe.Msg)
+		}
+		if pe.Msg == "" || pe.Col != 0 || pe.Error() != want {
+			t.Errorf("ParseYAML(%q) error %q: line %d col %d", src, pe, pe.Line, pe.Col)
+		}
 	}
-	pe := mustFail(t, "a:\n  port: 1\n  port: 2\n", 3, "duplicate")
-	if pe.Col != 3 {
-		t.Errorf("duplicate key col %d, want 3", pe.Col)
+	if pe := mustFail(t, "a: 1\nb:\n\tc: 2\n", ""); pe.Line != 3 {
+		t.Errorf("tab error line %d, want 3", pe.Line)
 	}
 }

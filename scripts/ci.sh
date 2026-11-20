@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Full CI (design D13): gofmt, standard-library check, vet and unit tests in
-# all three modules, then scripts/e2e.sh for each config in ./configs.
+# Full CI (design D13): gofmt, dependency check, vet and unit tests in all
+# three modules, then scripts/e2e.sh for each config in ./configs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lock.sh
 
-export GOPROXY=off GOWORK=off GOFLAGS=
+export GOWORK=off GOFLAGS=
 unset GATEWAY_URL
 MODULES=". mock-upstream tests"
 CONFIGS="gateway.yaml variant-a.yaml variant-b.yaml variant-c.yaml"
@@ -20,22 +20,24 @@ step "gofmt"
 unformatted="$(find . \( -path ./.git -o -path ./.claude \) -prune -o -name '*.go' -type f -print0 | xargs -0 gofmt -l)"
 [ -z "$unformatted" ] || die "gofmt needed:"$'\n'"$unformatted"
 
-step "standard-library check"
+# The gateway builds from itself and gopkg.in/yaml.v3 only. The mocks and the
+# e2e tests build from themselves and the standard library only.
+step "dependency check"
 bad=""
 for m in $MODULES; do
 	[ -f "$m/go.mod" ] || die "$m/go.mod missing"
 	name="$(awk '$1 == "module" { print $2 }' "$m/go.mod")"
-	if grep -nE '^[[:space:]]*require([[:space:](]|$)' "$m/go.mod" >&2; then
-		echo "stdlib: module $name ($m/go.mod) has require lines" >&2
-		bad="$bad $name"
-		continue
+	want="$name"
+	[ "$m" != . ] || want="$name"$'\n'"gopkg.in/yaml.v3"
+	if got="$(cd "$m" && go list -deps -test -f '{{with .Module}}{{.Path}}{{end}}' ./... 2>&1)"; then
+		got="$(printf '%s\n' "$got" | sed '/^$/d' | LC_ALL=C sort -u)"
 	fi
-	if ! all="$(cd "$m" && go list -m all 2>&1)" || [ "$all" != "$name" ]; then
-		echo "stdlib: module $name ($m) go list -m all printed:"$'\n'"$all" >&2
+	if [ "$got" != "$want" ]; then
+		echo "deps: module $name ($m) builds from:"$'\n'"$got"$'\n'"want:"$'\n'"$want" >&2
 		bad="$bad $name"
 	fi
 done
-[ -z "$bad" ] || die "standard-library check failed for:$bad"
+[ -z "$bad" ] || die "dependency check failed for:$bad"
 
 for m in $MODULES; do
 	step "go vet, go test ($m)"

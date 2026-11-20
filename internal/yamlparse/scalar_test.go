@@ -29,6 +29,12 @@ func TestScalarStyles(t *testing.T) {
 		{"single only quotes", `''''`, "'", true},
 		{"double hash", `"a # b"`, "a # b", true},
 		{"double null word", `"~"`, "~", true},
+		{"double hex escape", `"a\x41"`, "aA", true},
+		{"str tag", `!!str 8080`, "8080", true},
+		{"str tag on null word", `!!str null`, "null", true},
+		{"literal block", "|\n  line one\n  line two", "line one\nline two\n", true},
+		{"literal block strip", "|-\n  text", "text", true},
+		{"folded block", ">\n  one\n  two", "one two\n", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -44,28 +50,9 @@ func TestScalarStyles(t *testing.T) {
 	}
 }
 
-func TestScalarErrors(t *testing.T) {
-	cases := []struct {
-		name, src string
-		col       int
-		want      string
-	}{
-		{"unknown escape", `v: "a\x41"`, 6, `unsupported escape \x`},
-		{"slash escape", `v: "a\/b"`, 6, "unsupported escape"},
-		{"short unicode", `v: "\u12"`, 5, "4 hex"},
-		{"bad hex", `v: "\uzzzz"`, 5, "4 hex"},
-		{"lone surrogate", `v: "\ud83d"`, 5, "surrogate"},
-		{"unterminated double", `v: "abc`, 4, "unterminated"},
-		{"trailing backslash", `v: "abc\`, 4, "unterminated"},
-		{"unterminated single", `v: 'it''s`, 4, "unterminated"},
-		{"content after quote", `v: "a" b`, 8, "unexpected content"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			pe := mustFail(t, "a: 1\n"+c.src+"\n", 2, c.want)
-			if pe.Col != c.col {
-				t.Errorf("col %d, want %d", pe.Col, c.col)
-			}
-		})
+func TestMultiLineScalars(t *testing.T) {
+	src := "desc: first part\n  second part\nq: \"a\n  b\"\n"
+	if got := dump(mustParse(t, src), true); got != `{"desc": "first part second part"@1:7, "q": "a b"q@3:4}@1:1` {
+		t.Errorf("got %s", got)
 	}
 }

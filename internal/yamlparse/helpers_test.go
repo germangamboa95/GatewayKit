@@ -62,8 +62,9 @@ func mustParse(t *testing.T, src string) *Node {
 	return n
 }
 
-// mustFail asserts a parse error on wantLine whose message contains want.
-func mustFail(t *testing.T, src string, wantLine int, want string) *Error {
+// mustFail asserts a parse error whose message contains want and returns
+// it, so callers can check its position.
+func mustFail(t *testing.T, src, want string) *Error {
 	t.Helper()
 	n, err := ParseYAML([]byte(src))
 	if err == nil {
@@ -73,14 +74,20 @@ func mustFail(t *testing.T, src string, wantLine int, want string) *Error {
 	if !errors.As(err, &pe) {
 		t.Fatalf("error %v is %T, want *Error", err, err)
 	}
-	if pe.Line != wantLine {
-		t.Errorf("ParseYAML(%q) error %q: line %d, want %d", src, err, pe.Line, wantLine)
-	}
 	if !strings.Contains(pe.Msg, want) {
 		t.Errorf("ParseYAML(%q) error %q, want it to contain %q", src, err, want)
 	}
-	if !strings.HasPrefix(err.Error(), fmt.Sprintf("%d:%d: ", pe.Line, pe.Col)) {
-		t.Errorf("error %q lacks line:col prefix", err)
-	}
 	return pe
+}
+
+// mustFailAt asserts a parse error at line:col whose message contains want.
+func mustFailAt(t *testing.T, src string, line, col int, want string) {
+	t.Helper()
+	pe := mustFail(t, src, want)
+	if pe.Line != line || pe.Col != col {
+		t.Errorf("ParseYAML(%q) error %q at %d:%d, want %d:%d", src, pe, pe.Line, pe.Col, line, col)
+	}
+	if prefix := fmt.Sprintf("%d:%d: ", line, col); !strings.HasPrefix(pe.Error(), prefix) {
+		t.Errorf("error %q lacks %q prefix", pe, prefix)
+	}
 }

@@ -1,4 +1,4 @@
-// Package yamlparse parses the YAML subset used by gateway.yaml into an
+// Package yamlparse parses gateway.yaml with gopkg.in/yaml.v3 into an
 // untyped, positioned node tree.
 package yamlparse
 
@@ -48,7 +48,8 @@ type Pos struct {
 	Col  int
 }
 
-// Error is a parse error at a 1-based line and column.
+// Error is a parse error at a 1-based line and column. Col is 0 when only
+// the line is known, and Line is 0 when neither is.
 type Error struct {
 	Line int
 	Col  int
@@ -56,5 +57,11 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	switch {
+	case e.Line == 0:
+		return e.Msg
+	case e.Col == 0:
+		return fmt.Sprintf("%d: %s", e.Line, e.Msg)
+	}
 	return fmt.Sprintf("%d:%d: %s", e.Line, e.Col, e.Msg)
 }

@@ -64,7 +64,14 @@ func TestLoadCleansDisplayPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = Load("./gateway.yaml")
-	if !errors.As(err, &le) || !strings.HasPrefix(le.Problems[0], "gateway.yaml:1:4: ") {
+	if !errors.As(err, &le) || !strings.HasPrefix(le.Problems[0], "gateway.yaml:1: ") {
+		t.Fatalf("got %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gateway.yaml"), []byte("a: 1\nb: *nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = Load("./gateway.yaml")
+	if !errors.As(err, &le) || le.Problems[0] != "gateway.yaml: unknown anchor 'nope' referenced" {
 		t.Fatalf("got %v", err)
 	}
 }
