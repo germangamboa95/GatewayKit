@@ -6,3 +6,5 @@ tests
 scripts
 reference
 *.md
+configs
+.github
